@@ -1,5 +1,4 @@
 import requests
-import json
 from pathlib import Path
 import subprocess
 import pandas as pd
@@ -13,6 +12,7 @@ import time
 import itertools
 import string
 import numpy as np
+from sklearn.cluster import HDBSCAN
 
 def get_alignment_positions(foldseek_result, query_struct, query_chain, target_struct, target_chain):
     query_start = foldseek_result.qstart
@@ -160,41 +160,6 @@ def determine_tcs(query_struct, transplant_chain_id):
     ##we should also consider providing a method to return a list of clashing atoms like alphafill does in the json
     return tcs
 
-def find_and_download_af_prediction(identifier, outdir = "."):
-    #check output dir exists
-    outdir_path = Path(outdir)
-    outdir_path.mkdir(parents=True, exist_ok=True)
-    #check a file containing the identiifer itself exists
-    files_with_identifier = list(outdir_path.glob(f'*{identifier}*'))
-    if files_with_identifier:
-        return None, str(files_with_identifier[0])
-    
-    #specify the API endpoint for the identifier
-    endpoint = f"https://alphafold.com/api/prediction/{identifier}"
-
-    response = requests.get(endpoint)
-
-    if response.status_code == 200:
-        data = response.json()
-        #there should just be one result for an identifier, check this before proceeding
-        if len(data) > 1:
-            return f"More than one matched result for identifier {identifier}", None
-        #download the latest cif file for the prediction
-        response = requests.get(data[0]["cifUrl"], stream=True)
-
-        # Check if the request was successful
-        cif_path = f'{outdir}/{data[0]["entryId"]}-model_{data[0]["latestVersion"]}.cif'
-        if response.status_code == 200:
-            with open(cif_path, "wb") as cif_file:
-                for chunk in response.iter_content(chunk_size=8192):
-                    cif_file.write(chunk)
-            return None, cif_path
-        else:
-            return f'Failed to download file. Status code: {response.status_code}', None
-        
-    else:
-        return f"Failed to retrieve data: {response.status_code}", None
-
 import bisect
 def check_domain_profile(af_domain_profiles, residues_in_contact = 0, procoggraph_profile = 0):
     """
@@ -236,197 +201,146 @@ def main():
     """This script takes an input foldseek alignment file and transplants cognate ligands from the aligned structures to an AlphaFold model. 
     The foldseek alignment file is expected to be pre-filtered to include only the best matches that ligands will be transplanted from.
     Example command:
-    python3 alphacognate_transplant.py --af_dir /raid/MattC/repos/alpha_cognate/alphafold_structures --outdir /raid/MattC/repos/alpha_cognate/results --structure_database_directory /raid/MattC/repos/foldseek/pcg_assemblies/ --procoggraph_data /raid/MattC/repos/ProCogGraphData/procoggraph_20240528/flat_files/cath_single_chain_domain_interactions.tsv.gz --cath_af_grouped /raid/MattC/repos/alpha_cognate/cath_alphafold_domains.tsv.gz
+    python3 alphacognate_transplant.py --foldseek_file /raid/MattC/repos/alpha_cognate/combined_foldseek_file.tsv --outdir /raid/MattC/repos/alpha_cognate/results --structure_database_directory /raid/MattC/repos/foldseek/pcg_assemblies/
+
+    The expected input format for predicted structure domains is accession,domain_profile(; delimited list of domain:range)
     """
-    parser = argparse.ArgumentParser(description='Transplant cognate ligands from experimentally determined structures to an AlphaFold model.')
-    parser.add_argument('--af_dir', type=str, help='Path to the AlphaFold model structure directory (missing structures downloaded here). Created if missing')
+    parser = argparse.ArgumentParser(description='Transplant cognate ligands from experimentally determined structures to an Predicted Structure Model.')
+    parser.add_argument('--foldseek_file', type=str, help='Path to the processed foldseek file of structures to transplant.')
     parser.add_argument('--outdir', type=str, help='Path to the output directory. Created if missing')
     parser.add_argument('--structure_database_directory', type=str, help='Path to the directory containing the structures to transplant ligands from.')
-    parser.add_argument('--procoggraph_data', type=str, help='Path to the ProCogGraph data in TSV format.')
-    parser.add_argument('--cath_af_grouped', type=str, help='Path to the grouped domain cath af info.')
     args = parser.parse_args()
 
     #check directories exist
-    Path(f"{args.outdir}/foldseek").mkdir(parents=True, exist_ok=True)
-    Path(args.af_dir).mkdir(parents=True, exist_ok=True)
-    Path(f"{args.outdir}/transplanted_structures").mkdir(parents=True, exist_ok=True)
+    Path(f"{args.outdir}").mkdir(parents=True, exist_ok=True)
 
     #check if foldseek database directory exists - exit with error if not
     if not Path(args.structure_database_directory).exists():
         print(f"Error: {args.structure_database_directory} does not exist.")
         return
 
-    #from foldseek github c++ code
+    #from foldseek github c++ code - not using but keeping here for future reference
     threeAA2oneAA = {"ALA":'A', "ARG":'R', "ASN":'N', "ASP":'D', "CYS":'C', "GLN":'Q', "GLU":'E', "GLY":'G', "HIS":'H', "ILE":'I', "LEU":'L', "LYS":'K', "MET":'M', "PHE":'F', "PRO":'P', "SER":'S', "THR":'T', "TRP":'W', "TYR":'Y', "VAL":'V', "MSE":'M', "MLY":'K', "FME":'M', "HYP":'P',"TPO":'T', "CSO":'C', "SEP":'S', "M3L":'K',"HSK":'H', "SAC":'S', "PCA":'E', "DAL":'A',"CME":'C', "CSD":'C', "OCS":'C', "DPR":'P',"B3K":'K', "ALY":'K', "YCM":'C', "MLZ":'K',"4BF":'Y', "KCX":'K', "B3E":'E', "B3D":'D',"HZP":'P', "CSX":'C', "BAL":'A', "HIC":'H',"DBZ":'A', "DCY":'C', "DVA":'V', "NLE":'L',"SMC":'C', "AGM":'R', "B3A":'A', "DAS":'D',"DLY":'K', "DSN":'S', "DTH":'T', "GL3":'G',"HY3":'P', "LLP":'K', "MGN":'Q', "MHS":'H',"TRQ":'W', "B3Y":'Y', "PHI":'F', "PTR":'Y',"TYS":'Y', "IAS":'D', "GPL":'K', "KYN":'W',"SEC":'C'}
 
-    #foldseek results match the af structure to the pre-built pdb database. 
-    # We then merege this with procoggraph data to get the structures to transplant
+
     #merge procoggraph data and foldseek data. then we do a foldseek itterrows but we should loop over the structures, where there could be multiple ligands to transplant in the same structure.
     
-    cath_af_grouped = pd.read_csv(args.cath_af_grouped, sep="\t")
-    cath_af_grouped["domain"] = cath_af_grouped["domain"].str.split(";")
-    cath_af_grouped["domain_profile"] = cath_af_grouped["domain_profile"].str.split(";")
-    procoggraph = pd.read_csv(args.procoggraph_data, sep="\t")
-    procoggraph["bound_entity_pdb_residues"] = procoggraph["bound_entity_pdb_residues"].str.split("|").apply(lambda x : [int(y) for y in x])
-    procoggraph["bound_entity_chain"] = procoggraph["uniqueID"].str.split("_").apply(lambda x: x[2])
+    foldseek_file = pd.read_csv(args.foldseek_file, sep="\t")
+    foldseek_file["fp"] = foldseek_file["structure_dir"] + "/" + foldseek_file["file_name"]
+    predicted_structure_id = foldseek_file["accession"].values[0]
+    predicted_structure_file = foldseek_file["fp"].values[0]
 
+    if "error" in foldseek_file.columns:
+        result = {"num_transplants": 0, "accession": predicted_structure_id, "query_structure": foldseek_file["file_name"].values[0], "transplant_structure": f"{args.outdir}/{predicted_structure_id}_transplants.cif.gz", "foldseek_rmsd": np.nan, "global_rmsd": np.nan, "ligand": np.nan, 'hetCode': np.nan, 'cognateLigand': np.nan, "interaction": np.nan, "local_rmsd": np.nan, "tcs": np.nan, "transplanted_structure_path": np.nan, "transplanted_ligand_chain": np.nan, "transplanted_ligand_residues": np.nan, "domain_residue_contacts": np.nan, "domain_residue_counts": np.nan, "domain_profile_match": np.nan, "center_of_mass": np.nan, "error": foldseek_file.error.values[0]}
+        result_df = pd.DataFrame([result])
+        result_df.to_csv(f"{args.outdir}/{predicted_structure_id}_transplants.tsv.gz", sep = "\t", index = False, compression = "gzip")
 
-    all_transplants = []
-    for _, row1 in cath_af_grouped[0:1000].iterrows():
-        start_time = time.time()
-        transplants = []
-        error = None
-        error, af_structure_file = find_and_download_af_prediction(row1.af_accession, args.af_dir)
-        if error:
-            result = {"query": row1.af_accession, "error": error}
-            transplants.append(result)
-        foldseek_file = f"{args.outdir}/foldseek/aln_pcg_{row1.af_accession}"
-        command = [
-            "foldseek", "easy-search",
-            af_structure_file, 
-            "/raid/MattC/repos/foldseek/pcgDB", 
-            foldseek_file, 
-            "/raid/MattC/repos/foldseek/pcgDB_index", '--prefilter-mode' , '1',
-            "--format-mode", "4",
-            "--format-output", "query,target,u,t,qlen,tlen,alnlen,mismatch,qaln,qstart,qend,alnlen,taln,tstart,tend,qseq,tseq,rmsd,qheader,alntmscore,qtmscore,ttmscore,evalue,prob"
-        ]
-        
-        log_file = f"{args.outdir}/foldseek/{row1.af_accession}_foldseek_output.txt"
-
-        # Run the command using subprocess and capture the output
-        if not Path(foldseek_file).exists():
-            result = subprocess.run(command, text=True, capture_output=True)
-
-            # Save the stdout to the specified file
-            with open(log_file, 'w') as f:
-                f.write(result.stdout)
-
-            # Check for errors in stderr
-            if result.stderr:
-                if not "posix_madvise returned an error (touchMemory)\n" == result.stderr:
-                    error = f"Non-tolerated error for {row1['domain'][0]}:\n{result.stderr}"
-                    result = {"query": row1.af_accession, "error": error}
-                    transplants.append(result)
-                    continue  # Stop execution on any other error
-                    
-        foldseek = pd.read_csv(foldseek_file, sep = "\t")
-        foldseek["pdb_id"] = foldseek["target"].str.extract("^([A-Za-z0-9]+)_bio-h")
-        foldseek["target_chain"] = foldseek["target"].str.extract("^[A-Za-z0-9]+_bio-h_([A-Za-z0-9]+)")
-        foldseek["target_file"] = foldseek["target"].str.extract("^([A-Za-z0-9]+_bio-h)")
-        foldseek["query_chain"] = "A" #this is always the same for the alphafold model?
-        foldseek["af_accession"] = foldseek["query"].str.extract("AF-([A-Za-z0-9]+)-")
-        foldseek_cath = foldseek.merge(cath_af_grouped, on = "af_accession", how = "left")
-        foldseek_cath_filtered = foldseek_cath.loc[(foldseek_cath.prob >= 0.5) & (foldseek_cath.alntmscore >= 0.5)].copy()
-        if foldseek_cath_filtered is None:
-            error = "No structures with high enough alignment scores to transplant from"
-            result = {"query": row1.af_accession, "error": error}
-            continue
-
-        foldseek_merge = foldseek_cath_filtered.merge(procoggraph, left_on = ["pdb_id", "target_chain"], right_on = ["pdb_id", "assembly_chain_id_protein"], how = "inner")
-
-        if foldseek_merge.empty:
-            error = "No structures to transplant ligands from for AF structure"
-            result = {"query": row1.af_accession, "error": error}
-            continue
-
-        foldseek_merge["interaction_domains"] = foldseek_merge["combined_interaction"].str.split(";")
-        foldseek_merge["interaction_domains"] = foldseek_merge["interaction_domains"].apply(lambda x : [y.split(":")[0] for y in x])
-        #keep only the matches to structures where all domains in the interaction domains are present in the domain profile
-        foldseek_merge_domains = foldseek_merge.loc[foldseek_merge.apply(lambda row: all(domain in row['domain'] for domain in row['interaction_domains']), axis=1)]
-        if foldseek_merge_domains.empty:
-            error = "No structures with matching domain profiles to transplant from"
-            result = {"query": row1.af_accession, "error": error}
-            continue
-            
-        num_transplants = len(foldseek_merge_domains)
-        transplant_chain_ids = generate_chain_ids(num_transplants)
-
-        #load the af structure to which ligands will be transplanted
-        af_structure = cif.read(af_structure_file)
+        #despite not doing anything to it, process the predicted structure with gemmi and output so that snakemake is happy.
+        af_structure = cif.read(predicted_structure_file)
         query_block = af_structure.sole_block()
-        query_struct = gemmi.make_structure_from_block(query_block)
-        if not Path(f"{args.outdir}/transplanted_structures/{row1.af_accession}_transplants.tsv", sep = "\t").exists():
-            for index, row in foldseek_merge_domains.iterrows():
-                result = {"num_transplants": num_transplants}
-                query = row["query"]
-                target = row["target"]
-                target_chain = row["proteinStructAsymID"]
-                #target_chain_asym = row[""]
-                query_chain = row["query_chain"]
-
-                target_doc = cif.read(f"{args.structure_database_directory}/{row.target_file}.cif.gz")
-                target_block = target_doc.sole_block()
-                target_struct = gemmi.make_structure_from_block(target_block)
-                query_alignment_range, target_alignment_range, query_alignment_range_atom, target_alignment_range_atom = get_alignment_positions(row, query_struct, query_chain, target_struct, target_chain)
-
-                #superpose the query structure onto the target structure, using the alignment from foldseek result (the global alignment)
-                
-                
-                sup = gemmi.superpose_positions(query_alignment_range, target_alignment_range)
-                global_rmsd = sup.rmsd
-                target_struct[0].transform_pos_and_adp(sup.transform) #align the target structure onto the query structure
-
-                #get the residues in the assembly that make up the ligand (and the chain they are in)
-                res_list = row.bound_entity_pdb_residues
-                res_chain = row.assembly_chain_id_ligand
-
-                #identify the contacts to the ligand that should be used to perform the 'local' alignment.
-                local_superposition, contact_res_list = contact_search_target(target_struct, res_chain, res_list, 6, query_alignment_range, target_alignment_range, query_alignment_range_atom, target_alignment_range_atom)
-                ##we can add a value of matched domain profiles? by checking the residue ranges?
-                if local_superposition is not None:
-                    local_rmsd = local_superposition.rmsd
-                else:
-                    error = "Not enough local contacts"
-                    result.update({"query_structure": query, "transplant_structure": target, "foldseek_rmsd": row.rmsd, "global_rmsd": global_rmsd, "ligand": row.uniqueID, 'hetCode': row.hetCode, 'cognateLigand': row.cognate_ligand, "interaction": row.combined_interaction, "error": error})
-                    transplants.append(result)
-                    continue
-                
-                #check the domain profile of the ligand contacts matches the procoggraph mapping
-                #the procoggraph map boolean value describes the match between domain contacts in af structure and expected interacting domains from coglig match. but we do not filter on this, leave it up to end user.
-                residue_mappings, interacting_domains, procoggraph_map = check_domain_profile(row.domain_profile, contact_res_list, row.interaction_domains)
-
-
-                target_struct[0].transform_pos_and_adp(local_superposition.transform)
-                
-                transplant_chain_id = transplant_chain_ids.pop(0)
-                transplant_chain = create_transplant_chain(target_struct, res_chain, res_list, transplant_chain_id)
-            
-                query_struct[0].add_chain(transplant_chain)
-                query_struct.update_mmcif_block(query_block)
-                
-                #explore if determine tcs could run before doing the actual transpalnt, and only pop a new chain id if the tcs is better than any pre-existing transplant of the same bound entity - cognate ligand mapping?
-                tcs = determine_tcs(query_struct, transplant_chain_id)
-
-
-                result.update({"query_structure": query, "transplant_structure": target, "foldseek_rmsd": row.rmsd, "global_rmsd": global_rmsd, "ligand": row.uniqueID, 'hetCode': row.hetCode, 'cognateLigand': row.cognate_ligand, "interaction": row.combined_interaction, "local_rmsd": local_rmsd, "tcs": tcs, "transplanted_structure_path": f"{args.outdir}/transplanted_structures/{row1.af_accession}_cognate_transplants.cif.gz", "transplanted_ligand_chain": transplant_chain_id, "transplanted_ligand_residues": ",".join([str(x) for x in res_list]), "domain_residue_contacts": residue_mappings, "domain_residue_counts": interacting_domains, "domain_profile_match": procoggraph_map})
-                transplants.append(result)
-                
-            #output the AF structure with transplanted ligands
-            query_block.write_file(f"{args.outdir}/transplanted_structures/{row1.af_accession}_cognate_transplants.cif")
-            #gzip the output file
-            subprocess.run(["gzip", f"{args.outdir}/transplanted_structures/{row1.af_accession}_cognate_transplants.cif"])
-            #add transplant info to the global df
-            transplants_df = pd.DataFrame(transplants)
-            transplants_df["runtime"] = time.time() - start_time
-            transplants_df.to_csv(f"{args.outdir}/transplanted_structures/{row1.af_accession}_transplants.tsv", sep = "\t", index = False)
-        else:
-            transplants_df = pd.read_csv(f"{args.outdir}/transplanted_structures/{row1.af_accession}_transplants.tsv", sep = "\t")
-            transplants_df["pre-calculated"] = True
-        all_transplants.append(transplants_df)
-        
-
-    all_transplants_df = pd.concat(all_transplants, ignore_index = True)
-    all_transplants_df.to_csv(f"{args.outdir}/all_transplants.tsv", sep = "\t", index = False)
-    print(all_transplants_df)
-
+        query_block.write_file(f"{args.outdir}/{predicted_structure_id}_transplants.cif")
+        return
     
-    ##we also need to find a way to match the binding pocket residues to domains and confirm that the AF binding pocket matches the domains we expect to be in context.
-    ##MAybe we can do a domain rmsd calculation for each of the domains in the transplant structure, to see if they are oriented similarly in the AF sturcture
+    query = foldseek_file["query"].values[0]
+    foldseek_file["domain_profile"] = foldseek_file["domain_profile"].str.split(";")
+    foldseek_file["domain"] = foldseek_file["domain_profile"].apply(lambda x: [y.split(":")[0] for y in x])
+    #convert bound entity pdb residues to list of ints - force to be a string first in case of places whrre there are no pipe delimiters in files.
+    foldseek_file["bound_entity_pdb_residues"] = foldseek_file["bound_entity_pdb_residues"].astype("str").str.split("|").apply(lambda x : [int(y) for y in x])
+    foldseek_file["interaction_domains"] = foldseek_file["combined_interaction"].str.split(";")
+    foldseek_file["interaction_domains"] = foldseek_file["interaction_domains"].apply(lambda x : [y.split(":")[0] for y in x])
+    start_time = time.time()
+    transplants = []
+    error = None
+    
+    num_transplants = len(foldseek_file)
+    transplant_chain_ids = generate_chain_ids(num_transplants)
+
+    #load the af structure to which ligands will be transplanted
+    
+    af_structure = cif.read(predicted_structure_file)
+    query_block = af_structure.sole_block()
+    query_struct = gemmi.make_structure_from_block(query_block)
+    if not Path(f"{args.outdir}/{predicted_structure_id}_transplants.tsv.gz", sep = "\t").exists():
+        for index, row in foldseek_file.iterrows():
+            result = {"num_transplants": num_transplants}
+            
+            target = row["target"]
+            target_chain = row["proteinStructAsymID"]
+            query_chain = row["query_chain"]
+
+            target_doc = cif.read(f"{args.structure_database_directory}/{row.target_file}.cif.gz")
+            target_block = target_doc.sole_block()
+            target_struct = gemmi.make_structure_from_block(target_block)
+            query_alignment_range, target_alignment_range, query_alignment_range_atom, target_alignment_range_atom = get_alignment_positions(row, query_struct, query_chain, target_struct, target_chain)
+
+            #superpose the query structure onto the target structure, using the alignment from foldseek result (the global alignment)
+            
+            
+            sup = gemmi.superpose_positions(query_alignment_range, target_alignment_range)
+            global_rmsd = sup.rmsd
+            target_struct[0].transform_pos_and_adp(sup.transform) #align the target structure onto the query structure
+
+            #get the residues in the assembly that make up the ligand (and the chain they are in)
+            res_list = row.bound_entity_pdb_residues
+            res_chain = row.assembly_chain_id_ligand
+
+            #identify the contacts to the ligand that should be used to perform the 'local' alignment.
+            local_superposition, contact_res_list = contact_search_target(target_struct, res_chain, res_list, 6, query_alignment_range, target_alignment_range, query_alignment_range_atom, target_alignment_range_atom)
+            ##we can add a value of matched domain profiles? by checking the residue ranges?
+            if local_superposition is not None:
+                local_rmsd = local_superposition.rmsd
+            else:
+                error = "Not enough local contacts"
+                result.update({"accession": predicted_structure_id, "query_structure": query, "transplant_structure": target, "foldseek_rmsd": row.rmsd, "global_rmsd": global_rmsd, "ligand": row.uniqueID, 'hetCode': row.hetCode, 'cognateLigand': row.cognate_ligand, "interaction": row.combined_interaction, "error": error, "center_of_mass": np.nan})
+                transplants.append(result)
+                continue
+            
+            #check the domain profile of the ligand contacts matches the procoggraph mapping
+            #the procoggraph map boolean value describes the match between domain contacts in af structure and expected interacting domains from coglig match. but we do not filter on this, leave it up to end user.
+            residue_mappings, interacting_domains, procoggraph_map = check_domain_profile(row.domain_profile, contact_res_list, row.interaction_domains)
+
+
+            target_struct[0].transform_pos_and_adp(local_superposition.transform)
+            
+            transplant_chain_id = transplant_chain_ids.pop(0)
+            transplant_chain = create_transplant_chain(target_struct, res_chain, res_list, transplant_chain_id)
+            transplant_chain_center_of_mass = ",".join([str(x) for x in transplant_chain.calculate_center_of_mass().tolist()])
+            query_struct[0].add_chain(transplant_chain)
+            query_struct.update_mmcif_block(query_block)
+            
+            #explore if determine tcs could run before doing the actual transpalnt, and only pop a new chain id if the tcs is better than any pre-existing transplant of the same bound entity - cognate ligand mapping?
+            tcs = determine_tcs(query_struct, transplant_chain_id)
+
+
+            result.update({"accession": predicted_structure_id, "query_structure": query, "transplant_structure": target, "foldseek_rmsd": row.rmsd, "global_rmsd": global_rmsd, "ligand": row.uniqueID, 'hetCode': row.hetCode, 'cognateLigand': row.cognate_ligand, "interaction": row.combined_interaction, "local_rmsd": local_rmsd, "tcs": tcs, "transplanted_structure_path": f"{args.outdir}/{predicted_structure_id}_transplants.cif.gz", "transplanted_ligand_chain": transplant_chain_id, "transplanted_ligand_residues": ",".join([str(x) for x in res_list]), "domain_residue_contacts": residue_mappings, "domain_residue_counts": interacting_domains, "domain_profile_match": procoggraph_map, "center_of_mass": transplant_chain_center_of_mass})
+            transplants.append(result)
+            
+        #output the AF structure with transplanted ligands
+        query_block.write_file(f"{args.outdir}/{predicted_structure_id}_transplants.cif")
+    
+        #convert individual transplant dictionaries into a single dataframe
+        transplants_df = pd.DataFrame(transplants)
+
+        #calculate cluster membership with default hdbscan parameters for transplants
+        if not transplants_df["center_of_mass"].isna().all():
+            transplants_df["center_of_mass_split"] = transplants_df["center_of_mass"].str.split(",")
+            points = transplants_df.loc[transplants_df.center_of_mass_split.isna() == False, "center_of_mass_split"].apply(lambda x: [float(y) for y in x]).values
+            if len(points) < 5:
+                transplants_df.loc[transplants_df.center_of_mass_split.isna() == False, "cluster"] = -1
+            else:
+                #discuss this in a disccusion section.
+                points = np.array([np.array(point) for point in points])
+                params = {"min_cluster_size": 5, "min_samples": 5} #specifying the default values here for future configuration by user
+                hdb = HDBSCAN(**params).fit(points)
+
+                #add cluster labels to the dataframe - clusters with fewer than 5 members will be labelled as noise and given -1 as a cluster value.
+                labels = hdb.labels_
+                transplants_df.loc[transplants_df.center_of_mass_split.isna() == False, "cluster"] = labels
+        else:
+            transplants_df["cluster"] = np.nan
+        #add runtime to the dataframe and output to a tsv file
+        transplants_df["runtime"] = time.time() - start_time
+        transplants_df.to_csv(f"{args.outdir}/{predicted_structure_id}_transplants.tsv.gz", sep = "\t", index = False, compression = "gzip")
 
 if __name__ == "__main__":
     main()
-
-
-
-
-
