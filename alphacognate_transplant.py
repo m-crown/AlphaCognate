@@ -38,7 +38,7 @@ def get_alignment_positions(foldseek_result, query_struct, query_chain, target_s
     for q_res, t_res in zip(qaln, taln):
         if q_res != "-" and t_res != "-":
             #we could add more checks in here for example ensuring the one letter code of the residue to be extracted is the same as reported in the alignment.
-            if target_idx <= len(target_chain_span.make_one_letter_sequence()) - 1: #we observe with 1xrr that the diproline bound ligands are included in the alignment at the end - this is incorrect, and results in a tseq that is longer than the target sequence in the mmcif structure. so prevent the indexes going above the length of the target sequence which would result in an index error.
+            if target_idx < len(target_chain_span): #we observe with 1xrr that the diproline bound ligands are included in the alignment at the end - this is incorrect, and results in a tseq that is longer than the target sequence in the mmcif structure. so prevent the indexes going above the length of the target sequence which would result in an index error.
                 # if pairs are aligned, extract the residues, using the index counter which considers gaps
                 query_res = query_chain_span[query_idx]
                 target_res = target_chain_span[target_idx]
@@ -83,17 +83,18 @@ def contact_search_target(target_struct, target_chain, reslist, contact_search_d
                         if not atom.is_hydrogen():
                             ns.add_atom(atom, n_ch, n_res, n_atom)
     if len(matched_res) != len(reslist):
+        #observe issue with ac1 and glc in 3poc where two residues have same seqid - need to check this in the future
         print("Failed to match all ligand residues, check chain mappings!")
-        return None
+        return None, None
     
     contacts = cs.find_contacts(ns)
     ca_pos = []
 
     backbone_atoms = ['CA']
     contact_res_list = []
-    for res in target_alignment_range_atom:
+    for res, res2 in zip(target_alignment_range_atom, query_alignment_range_atom):
         if any(x in [contact.partner1.atom for contact in contacts] for x in res["atoms"]):
-            contact_res_list.append(res["res"].seqid.num) #get a list of contacting residues to check correct domains are in proximity
+            contact_res_list.append(res2["res"].seqid.num) #get a list of contacting residues to check correct domains are in proximity
             res_backbone_atoms = [res["res"][a][0].pos for a in backbone_atoms] #use [a][0] instead of sole_atom(a) to get the first confomer when there are multiple confomers
             #append all of the backbone atoms to the list of ca pos
             ca_pos.extend(res_backbone_atoms)
@@ -304,29 +305,31 @@ def main():
             
             transplant_chain_id = transplant_chain_ids.pop(0)
             transplant_chain = create_transplant_chain(target_struct, res_chain, res_list, transplant_chain_id)
-            transplant_chain_center_of_mass = ",".join([str(x) for x in transplant_chain.calculate_center_of_mass().tolist()])
+            transplant_chain_center_of_mass = transplant_chain.calculate_center_of_mass().tolist()
+            if all([pd.isna(x) for x in transplant_chain_center_of_mass]):
+                transplant_chain_center_of_mass = np.nan
+            else:
+                transplant_chain_center_of_mass = ",".join([str(x) for x in transplant_chain_center_of_mass])
             query_struct[0].add_chain(transplant_chain)
             query_struct.update_mmcif_block(query_block)
             
             #explore if determine tcs could run before doing the actual transpalnt, and only pop a new chain id if the tcs is better than any pre-existing transplant of the same bound entity - cognate ligand mapping?
             tcs = determine_tcs(query_struct, transplant_chain_id)
 
+            compound_name = row.compound_name.split("|")[0] if isinstance(row.compound_name, str) else np.nan
 
-            result.update({"accession": predicted_structure_id, "query_structure": query, "transplant_structure": target, "foldseek_rmsd": row.rmsd, "global_rmsd": global_rmsd, "ligand": row.uniqueID, 'hetCode': row.hetCode, 'cognateLigand': row.cognate_ligand, "interaction": row.combined_interaction, "local_rmsd": local_rmsd, "tcs": tcs, "transplanted_structure_path": f"{args.outdir}/{predicted_structure_id}_transplants.cif.gz", "transplanted_ligand_chain": transplant_chain_id, "transplanted_ligand_residues": ",".join([str(x) for x in res_list]), "domain_residue_contacts": residue_mappings, "domain_residue_counts": interacting_domains, "domain_profile_match": procoggraph_map, "center_of_mass": transplant_chain_center_of_mass})
+            result.update({"accession": predicted_structure_id, "query_structure": query, "transplant_structure": target, "foldseek_rmsd": row.rmsd, "global_rmsd": global_rmsd, "ligand": row.uniqueID, 'hetCode': row.hetCode, 'cognateLigand': row.cognate_ligand, "interaction": row.combined_interaction, "local_rmsd": local_rmsd, "tcs": tcs, "transplanted_structure_path": f"{args.outdir}/{predicted_structure_id}_transplants.cif.gz", "transplanted_ligand_chain": transplant_chain_id, "transplanted_ligand_residues": ",".join([str(x) for x in res_list]), "domain_residue_contacts": residue_mappings, "domain_residue_counts": interacting_domains, "domain_profile_match": procoggraph_map, "center_of_mass": transplant_chain_center_of_mass, "compound_name": compound_name, "ecList": row.pdb_ec_list, "parityScore": row.score})
             transplants.append(result)
             
-        #output the AF structure with transplanted ligands
-        query_block.write_file(f"{args.outdir}/{predicted_structure_id}_transplants.cif")
-    
         #convert individual transplant dictionaries into a single dataframe
         transplants_df = pd.DataFrame(transplants)
 
         #calculate cluster membership with default hdbscan parameters for transplants
         if not transplants_df["center_of_mass"].isna().all():
             transplants_df["center_of_mass_split"] = transplants_df["center_of_mass"].str.split(",")
-            points = transplants_df.loc[transplants_df.center_of_mass_split.isna() == False, "center_of_mass_split"].apply(lambda x: [float(y) for y in x]).values
+            points = transplants_df.loc[(transplants_df.center_of_mass_split.isna() == False), "center_of_mass_split"].apply(lambda x: [float(y) for y in x]).values
             if len(points) < 5:
-                transplants_df.loc[transplants_df.center_of_mass_split.isna() == False, "cluster"] = -1
+                transplants_df.loc[(transplants_df.center_of_mass_split.isna() == False), "cluster"] = -1
             else:
                 #discuss this in a disccusion section.
                 points = np.array([np.array(point) for point in points])
@@ -335,11 +338,19 @@ def main():
 
                 #add cluster labels to the dataframe - clusters with fewer than 5 members will be labelled as noise and given -1 as a cluster value.
                 labels = hdb.labels_
-                transplants_df.loc[transplants_df.center_of_mass_split.isna() == False, "cluster"] = labels
+                transplants_df.loc[(transplants_df.center_of_mass_split.isna() == False), "cluster"] = labels
         else:
             transplants_df["cluster"] = np.nan
         #add runtime to the dataframe and output to a tsv file
         transplants_df["runtime"] = time.time() - start_time
+
+        #remove the split center of mass split column and the num transpalnts from the mmcif - it is implicit in the number of rows.
+        transplant_dictionary = transplants_df[[col for col in transplants_df.columns if col not in ["center_of_mass_split", "num_transplants", "accession"]]].fillna("").astype("str").to_dict(orient = "list")
+        #add the transplant dictionary as an mmcif category to the query block
+        query_block.set_mmcif_category("_alphacognate", transplant_dictionary)
+        #output the AF structure with transplanted ligands
+        query_block.write_file(f"{args.outdir}/{predicted_structure_id}_transplants.cif")
+
         transplants_df.to_csv(f"{args.outdir}/{predicted_structure_id}_transplants.tsv.gz", sep = "\t", index = False, compression = "gzip")
 
 if __name__ == "__main__":
