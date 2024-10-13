@@ -62,7 +62,7 @@ rule run_foldseek:
         procoggraph_foldseek_db_index = config["procoggraph_foldseek_db_index"],
     log: config["output_dir"] + "/logs/report.log"
     shell:
-        """foldseek easy-search {params.structure_dir} {params.procoggraph_foldseek_db} {output.foldseek_file} {params.procoggraph_foldseek_db_index} --threads {workflow.cores} --prefilter-mode 1 --format-mode 4 --format-output query,target,u,t,qlen,tlen,alnlen,mismatch,qaln,qstart,qend,taln,tstart,tend,qseq,tseq,rmsd,qheader,alntmscore,qtmscore,ttmscore,evalue,prob 2> {log}"""
+        """foldseek easy-search {params.structure_dir} {params.procoggraph_foldseek_db} {output.foldseek_file} {params.procoggraph_foldseek_db_index} --threads {workflow.cores} --prefilter-mode 1 --format-mode 4 --format-output query,target,u,t,qlen,tlen,alnlen,mismatch,qaln,qstart,qend,taln,tstart,tend,qseq,tseq,rmsd,qheader,alntmscore,qtmscore,ttmscore,evalue,prob > {log} 2> {log}"""
 
 rule copy_structure:
     input:
