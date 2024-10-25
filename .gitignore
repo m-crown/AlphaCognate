@@ -1,0 +1,7 @@
+
+*.gz
+alphafold_structures_manifest_full.csv
+split_manifest_command.sh
+check_dirs.sh
+run_alphacognate_pipeline.sh
+make_individual_manifests.py
