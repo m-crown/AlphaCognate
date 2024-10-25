@@ -15,18 +15,23 @@ def main():
     parser.add_argument('--structure', metavar='structure with ligand transplants', type=str,
                         help = "path to the transplants structure file")
     parser.add_argument('--output_file', type=str, help='User-specified output file for the filtered transplants, if not specified defaults to [in]_filtered.cif')
-    parser.add_argument('--domain_match', type=bool, default = False, help='Filter for domain matches, default is False')
-    parser.add_argument('--cognate_match', type=bool, default = False, help='Filter for cognate matches, default is False')
-    parser.add_argument('--best_match', type=bool, default = True, help='Filter for best matches, default is True')
+    parser.add_argument('--domain_match', action='store_true', help='Filter for domain matches, default is False')
+    parser.add_argument('--cognate_match', action='store_true', help='Filter for cognate matches, default is False')
+    parser.add_argument('--best_match', action='store_true', help='Filter for best matches, default is False')
     parser.add_argument('--min_cluster_size', type=int, default = 5, help='Minimum cluster size for re-clustering')
-    parser.add_argument('--min_samples', type=int, default = 5, help='Minimum samples for a cluster to be defined in re-clustering')
-    parser.add_argument('--recluster', type=bool, default = True, help='Whether to recluster the transplants')
+    parser.add_argument('--min_samples', type=int, default = 5, help='Minimum samples for re-clustering')
+    parser.add_argument('--recluster', action='store_true', help='Whether to recluster the transplants, default is False')
     args = parser.parse_args()
 
     if args.domain_match:
         domain_match = ["True"]
     else:
         domain_match = ["True", "False"]
+    
+    if args.cognate_match:
+        cognate_match = [False] #its inverse because we are checking for nan
+    else:
+        cognate_match = [True, False] #
 
     if not args.output_file:
         if args.structure.endswith(".cif.gz"):
@@ -47,8 +52,11 @@ def main():
     #breakdown the summary files into those with errors and those without
     #as standard, we remove rows from the dataframe where there was an error - so nothing was transplanted from that structure
     #then remaining params set by input.
-    transplants_to_retain = structure_transplants.loc[(structure_transplants.error.isna()) & (structure_transplants.domain_profile_match.isin(domain_match)) & (structure_transplants.cognateLigand.isna() == args.cognate_match)].copy()
-
+    if "error" in structure_transplants.columns:
+        transplants_to_retain = structure_transplants.loc[(structure_transplants.error.isna()) & (structure_transplants.domain_profile_match.isin(domain_match)) & (structure_transplants.cognateLigand.isna().isin(cognate_match))].copy()
+    else:
+        transplants_to_retain = structure_transplants.loc[(structure_transplants.domain_profile_match.isin(domain_match)) & (structure_transplants.cognateLigand.isna().isin(cognate_match))].copy()
+    
     if args.recluster:
         if not transplants_to_retain["center_of_mass"].isna().all():
             transplants_to_retain["center_of_mass_split"] = transplants_to_retain["center_of_mass"].str.split(",")
@@ -66,33 +74,35 @@ def main():
                 transplants_to_retain.loc[(transplants_to_retain.center_of_mass_split.isna() == False), "cluster"] = labels
         else:
             transplants_to_retain["cluster"] = np.nan
-
+    
     if args.best_match:
         unclustered_transplants = transplants_to_retain.loc[transplants_to_retain.cluster == -1]
         clustered_transplants = transplants_to_retain.loc[transplants_to_retain.cluster >= 0]
         best_cluster_transplant = clustered_transplants.loc[clustered_transplants.groupby('cluster')['tcs'].idxmin()]
         transplants_to_retain = pd.concat([unclustered_transplants, best_cluster_transplant])
-
+    
         
     #filter the chains
     transplant_chains = transplants_to_retain.transplanted_ligand_chain.unique().tolist() + ["A"] #keep the protein (a) chain too! 
-    for chain in query_struct[0]:
-        if chain.name not in transplant_chains:
-            query_struct[0].remove_chain(chain.name)
-            
+    to_be_deleted = [n for n, chain in enumerate(query_struct[0]) if chain.name not in transplant_chains]
+    for index in reversed(to_be_deleted):
+        del query_struct[0][index]
+    
+    query_struct.update_mmcif_block(query_block)
+    
     #need to update the num transplants in the output tsv file and set the accession that is not present in the mmcif file the data is loaded from
     transplants_to_retain["num_transplants"] = len(transplants_to_retain)
-    print(f"From {len(structure_transplants)} transplants, {len(transplants_to_retain)} were retained")
+    print(f"From {len(structure_transplants.transplanted_chain.nunique())} transplants, {len(transplants_to_retain.transplanted_chain.nunique())} were retained")
     #set the accession to be all parts of the filename before _transplants.cif.gz
     transplants_to_retain["accession"] = re.search(r'AF-[\w-]+(?=_transplants)', args.structure).group(0)
-
+    transplants_to_retain.to_csv(args.output_file.replace(".cif", ".tsv.gz"), sep="\t", index=False, compression = "gzip")
     #remove the split center of mass split column and the num transpalnts from the mmcif - it is implicit in the number of rows.
     transplant_dictionary = transplants_to_retain[[col for col in transplants_to_retain.columns if col not in ["center_of_mass_split", "num_transplants", "accession"]]].fillna("").astype("str").to_dict(orient = "list")
     #add the transplant dictionary as an mmcif category to the query block
     query_block.set_mmcif_category("_alphacognate", transplant_dictionary)
 
     #write the updated file
-    query_block.write_file(f"test_transplants.cif")
+    query_block.write_file(args.output_file)
 
 if __name__ == "__main__":
     main()
