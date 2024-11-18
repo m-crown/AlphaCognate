@@ -34,23 +34,19 @@ def main():
     foldseek_combined["target_file"] = foldseek_combined["target"].str.extract("^([A-Za-z0-9]+_bio-h)")
     foldseek_combined["query_chain"] = "A" #this is always the same for the alphafold model?
     foldseek_combined = foldseek_combined.merge(structure_manifest, left_on = "query", right_on = "file_name", how = "inner")
-    print(foldseek_combined)
     ##adding e value threshold equivalent to 1e-5 here helps to significantly reduce number of hits (using evalue in isolation at this threshold does not reduce enough - need to evaluate this in text
     foldseek_filtered = foldseek_combined.loc[(foldseek_combined.prob >= args.foldseek_prob_cutoff) & (foldseek_combined.alntmscore >= args.foldseek_alntmscore_cutoff) & (foldseek_combined.evalue <= args.foldseek_evalue_cutoff)]
     #foldseek_combined["accession"] = foldseek_combined["query"].apply(lambda x: os.path.basename(x).split(".")[0])
     foldseek_filtered_domains = foldseek_filtered.merge(predicted_structure_domains, on = "accession", how = "left")
-    print(foldseek_filtered_domains)
     procoggraph = pd.read_csv(args.procoggraph_data, sep="\t")
     procoggraph["bound_entity_chain"] = procoggraph["uniqueID"].str.split("_").apply(lambda x: x[2])
 
     foldseek_filtered_domains_cognate = foldseek_filtered_domains.merge(procoggraph, left_on = ["pdb_id", "target_chain"], right_on = ["pdb_id", "assembly_chain_id_protein"], how = "inner")
-    print(foldseek_filtered_domains_cognate)
 
     #check if output dir exists, if not create it
     Path(args.output_dir).mkdir(parents=True, exist_ok=True)
 
     for _, group in foldseek_filtered_domains_cognate.groupby("query"):
-        print(group)
         structure = group["accession"].values[0]
         #additionally limti at n structures maximum
         group_filtered = group.sort_values("evalue", ascending = True).head(args.max_structures).copy()
