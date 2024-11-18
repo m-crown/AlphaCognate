@@ -253,7 +253,7 @@ def main():
     transplants = []
     error = None
     
-    num_transplants = len(foldseek_file)
+    num_transplants = foldseek_file.uniqueID.nunique() #its the number of ligands, not number of ligands mapped to cogligs that are transplanted
     transplant_chain_ids = generate_chain_ids(num_transplants)
 
     #load the af structure to which ligands will be transplanted
@@ -261,12 +261,19 @@ def main():
     af_structure = cif.read(predicted_structure_file)
     query_block = af_structure.sole_block()
     query_struct = gemmi.make_structure_from_block(query_block)
+
+    #we make a subset of the deduplicated bound entity specific information needed for transplanting and iterate through this.
+    #post transplanting, we merge back the cognate information.
+    foldseek_transplants = foldseek_file[["target", "assembly_chain_id_protein", "query_chain", "target_file", "uniqueID", "bound_entity_pdb_residues", "assembly_chain_id_ligand", "combined_interaction", "domain_profile", "interaction_domains", "rmsd"]].drop_duplicates(subset = ["target", "uniqueID", "assembly_chain_id_protein", "query_chain", "assembly_chain_id_ligand"])
+    #and the information we merge after transplant, on uniqueID
+    foldseek_file["compound_name"] = foldseek_file.compound_name.apply(lambda x: x.split("|")[0] if isinstance(x, str) else np.nan)
+    foldseek_other = foldseek_file[["uniqueID", "cognate_ligand", "hetCode", "compound_name", "pdb_ec_list", "score"]].rename({"uniqueID": "ligand","pdb_ec_list":"ecList", "score": "parityScore"})
     if not Path(f"{args.outdir}/{predicted_structure_id}_transplants.tsv.gz", sep = "\t").exists():
-        for index, row in foldseek_file.iterrows():
+        for index, row in foldseek_transplants.iterrows():
             result = {"num_transplants": num_transplants}
             
             target = row["target"]
-            target_chain = row["proteinStructAsymID"]
+            target_chain = row["assembly_chain_id_protein"]
             query_chain = row["query_chain"]
 
             target_doc = cif.read(f"{args.structure_database_directory}/{row.target_file}.cif.gz")
@@ -292,7 +299,7 @@ def main():
                 local_rmsd = local_superposition.rmsd
             else:
                 error = "Not enough local contacts"
-                result.update({"accession": predicted_structure_id, "query_structure": query, "transplant_structure": target, "foldseek_rmsd": row.rmsd, "global_rmsd": global_rmsd, "ligand": row.uniqueID, 'hetCode': row.hetCode, 'cognateLigand': row.cognate_ligand, "interaction": row.combined_interaction, "error": error, "center_of_mass": np.nan})
+                result.update({"accession": predicted_structure_id, "query_structure": query, "transplant_structure": target, "foldseek_rmsd": row.rmsd, "global_rmsd": global_rmsd, "ligand": row.uniqueID, "interaction": row.combined_interaction, "error": error, "center_of_mass": np.nan})
                 transplants.append(result)
                 continue
             
@@ -316,14 +323,13 @@ def main():
             #explore if determine tcs could run before doing the actual transpalnt, and only pop a new chain id if the tcs is better than any pre-existing transplant of the same bound entity - cognate ligand mapping?
             tcs = determine_tcs(query_struct, transplant_chain_id)
 
-            compound_name = row.compound_name.split("|")[0] if isinstance(row.compound_name, str) else np.nan
-
-            result.update({"accession": predicted_structure_id, "query_structure": query, "transplant_structure": target, "foldseek_rmsd": row.rmsd, "global_rmsd": global_rmsd, "ligand": row.uniqueID, 'hetCode': row.hetCode, 'cognateLigand': row.cognate_ligand, "interaction": row.combined_interaction, "local_rmsd": local_rmsd, "tcs": tcs, "transplanted_structure_path": f"{args.outdir}/{predicted_structure_id}_transplants.cif.gz", "transplanted_ligand_chain": transplant_chain_id, "transplanted_ligand_residues": ",".join([str(x) for x in res_list]), "domain_residue_contacts": residue_mappings, "domain_residue_counts": interacting_domains, "domain_profile_match": procoggraph_map, "center_of_mass": transplant_chain_center_of_mass, "compound_name": compound_name, "ecList": row.pdb_ec_list, "parityScore": row.score})
+            result.update({"accession": predicted_structure_id, "query_structure": query, "transplant_structure": target, "foldseek_rmsd": row.rmsd, "global_rmsd": global_rmsd, "ligand": row.uniqueID, "interaction": row.combined_interaction, "local_rmsd": local_rmsd, "tcs": tcs, "transplanted_structure_path": f"{args.outdir}/{predicted_structure_id}_transplants.cif.gz", "transplanted_ligand_chain": transplant_chain_id, "transplanted_ligand_residues": ",".join([str(x) for x in res_list]), "domain_residue_contacts": residue_mappings, "domain_residue_counts": interacting_domains, "domain_profile_match": procoggraph_map, "center_of_mass": transplant_chain_center_of_mass})
             transplants.append(result)
             
         #convert individual transplant dictionaries into a single dataframe
         transplants_df = pd.DataFrame(transplants)
-
+        print(transplants_df)
+        transplants_df = transplants_df.merge(foldseek_other, on = "ligand", how = "left")
         #calculate cluster membership with default hdbscan parameters for transplants
         if not transplants_df["center_of_mass"].isna().all():
             transplants_df["center_of_mass_split"] = transplants_df["center_of_mass"].str.split(",")
