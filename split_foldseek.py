@@ -30,7 +30,7 @@ def main():
     predicted_structure_domains = pd.read_csv(args.predicted_structure_domains, sep="\t")
 
     foldseek_combined["pdb_id"] = foldseek_combined["target"].str.extract("^([A-Za-z0-9]+)_bio-h")
-    foldseek_combined["target_chain"] = foldseek_combined["target"].str.extract("^[A-Za-z0-9]+_bio-h_([A-Za-z0-9]+)")
+    foldseek_combined["target_chain"] = foldseek_combined["target"].str.extract("^[A-Za-z0-9]+_bio-h_([A-Za-z0-9_]+)")
     foldseek_combined["target_file"] = foldseek_combined["target"].str.extract("^([A-Za-z0-9]+_bio-h)")
     foldseek_combined["query_chain"] = "A" #this is always the same for the alphafold model?
     foldseek_combined = foldseek_combined.merge(structure_manifest, left_on = "query", right_on = "file_name", how = "inner")
@@ -57,7 +57,6 @@ def main():
         group_filtered.to_csv(f"{args.output_dir}/{structure}_foldseek.tsv.gz", sep="\t", index=False, compression = "gzip")
 
     for _, structure in structure_manifest.iterrows():
-        print(structure)
         #can check where it is lost here and create an error output. do this later
         if structure.accession not in foldseek_combined["accession"].values:
             row = {"accession": structure.accession, "file_name": structure.file_name, "structure_dir" : structure.structure_dir, "error":"No foldseek hits found"}
