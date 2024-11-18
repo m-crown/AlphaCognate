@@ -49,7 +49,10 @@ def main():
     for _, group in foldseek_filtered_domains_cognate.groupby("query"):
         structure = group["accession"].values[0]
         #additionally limti at n structures maximum
-        group_filtered = group.sort_values("evalue", ascending = True).head(args.max_structures).copy()
+        group = group.sort_values("evalue",ascending = True)
+        top_targets = group[["uniqueID","evalue"]].drop_duplicates().sort_values("evalue",ascending = True).head(args.max_structures).uniqueID.values
+        group_filtered = group.loc[group["uniqueID"].isin(top_targets)].copy()
+        #group_filtered = group.sort_values("evalue", ascending = True).head(args.max_structures).copy()
         group_filtered.to_csv(f"{args.output_dir}/{structure}_foldseek.tsv.gz", sep="\t", index=False, compression = "gzip")
 
     for _, structure in structure_manifest.iterrows():
