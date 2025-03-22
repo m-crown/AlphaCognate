@@ -106,3 +106,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+#note for future: the filtering of best match - which is done by tcs - should filter the best ligand transplant within a cluster, but by het code - so multiple ligands can be retained within a cluster location, but only the best example is retained.

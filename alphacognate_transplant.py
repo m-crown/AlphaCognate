@@ -27,10 +27,10 @@ def get_alignment_positions(foldseek_result, query_struct, query_chain, target_s
     #start index counters at the 0 indexed start positions of alignment.
     query_idx = query_start - 1
     target_idx = target_start - 1
-
-    query_chain_span = query_struct[0].get_subchain(query_chain)
-    target_chain_span = target_struct[0].get_subchain(target_chain) #we use get subchain to get the correct struct asym for the protein sequence (observer issues with using index directly for multiple chains with same name e.g. 4kvm chain H - matches ligand instead of protein)
-    
+    #OLD (keeping for ref to error): we use get subchain to get the correct struct asym for the protein sequence (observer issues with using index directly for multiple chains with same name e.g. 4kvm chain H - matches ligand instead of protein)
+    query_chain_span = query_struct[0][query_chain].get_polymer() #use get polymer to extract the protein sequence from the auth chain id - instead of using struct asym and get_subchain which doesnt work if struct asym not present
+    target_chain_span = target_struct[0][target_chain].get_polymer()
+    assert(target_chain_span.check_polymer_type().name in ["PeptideL", "PeptideD"]) #check that the chain is a peptide chain
     qaln = foldseek_result.qaln
     taln = foldseek_result.taln
 
@@ -257,17 +257,17 @@ def main():
     transplant_chain_ids = generate_chain_ids(num_transplants)
 
     #load the af structure to which ligands will be transplanted
-    
     af_structure = cif.read(predicted_structure_file)
     query_block = af_structure.sole_block()
     query_struct = gemmi.make_structure_from_block(query_block)
-
+    query_struct.merge_chain_parts()
+    
     #we make a subset of the deduplicated bound entity specific information needed for transplanting and iterate through this.
     #post transplanting, we merge back the cognate information.
-    foldseek_transplants = foldseek_file[["target", "assembly_chain_id_protein", "query_chain", "target_file", "uniqueID", "bound_entity_pdb_residues", "assembly_chain_id_ligand", "combined_interaction", "domain_profile", "interaction_domains", "rmsd"]].drop_duplicates(subset = ["target", "uniqueID", "assembly_chain_id_protein", "query_chain", "assembly_chain_id_ligand"])
+    foldseek_transplants = foldseek_file[["target", "assembly_chain_id_protein", "query_chain", "target_file", "uniqueID", "bound_entity_pdb_residues", "assembly_chain_id_ligand", "combined_interaction", "domain_profile", "interaction_domains", "rmsd", "qstart","tstart","qaln","taln"]].drop_duplicates(subset = ["target", "uniqueID", "assembly_chain_id_protein", "query_chain", "assembly_chain_id_ligand"])
     #and the information we merge after transplant, on uniqueID
     foldseek_file["compound_name"] = foldseek_file.compound_name.apply(lambda x: x.split("|")[0] if isinstance(x, str) else np.nan)
-    foldseek_other = foldseek_file[["uniqueID", "cognate_ligand", "hetCode", "compound_name", "pdb_ec_list", "score"]].rename({"uniqueID": "ligand","pdb_ec_list":"ecList", "score": "parityScore"})
+    foldseek_other = foldseek_file[["uniqueID", "cognate_ligand", "hetCode", "compound_name", "pdb_ec_list", "score"]].rename(columns = {"uniqueID": "ligand","pdb_ec_list":"ecList", "score": "parityScore", "cognate_ligand": "cognateLigand"})
     if not Path(f"{args.outdir}/{predicted_structure_id}_transplants.tsv.gz", sep = "\t").exists():
         for index, row in foldseek_transplants.iterrows():
             result = {"num_transplants": num_transplants}
@@ -279,6 +279,8 @@ def main():
             target_doc = cif.read(f"{args.structure_database_directory}/{row.target_file}.cif.gz")
             target_block = target_doc.sole_block()
             target_struct = gemmi.make_structure_from_block(target_block)
+            #merge chain parts to help with chain naming issue, use auth ids and get_polymer to identify protein chains
+            target_struct.merge_chain_parts()
             query_alignment_range, target_alignment_range, query_alignment_range_atom, target_alignment_range_atom = get_alignment_positions(row, query_struct, query_chain, target_struct, target_chain)
 
             #superpose the query structure onto the target structure, using the alignment from foldseek result (the global alignment)
@@ -328,7 +330,6 @@ def main():
             
         #convert individual transplant dictionaries into a single dataframe
         transplants_df = pd.DataFrame(transplants)
-        print(transplants_df)
         transplants_df = transplants_df.merge(foldseek_other, on = "ligand", how = "left")
         #calculate cluster membership with default hdbscan parameters for transplants
         if not transplants_df["center_of_mass"].isna().all():
