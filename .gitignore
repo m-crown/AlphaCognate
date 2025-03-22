@@ -5,3 +5,7 @@ split_manifest_command.sh
 check_dirs.sh
 run_alphacognate_pipeline.sh
 make_individual_manifests.py
+app/.venv
+app/credentials/pg_db_pass.txt
+*.pyc
+/app/backend/.venv
