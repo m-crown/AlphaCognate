@@ -20,6 +20,7 @@ type Structure = {
   name: string;
   url: string;
   transplanted: boolean;
+  transplants: string;
 };
 
 //need to have the row action thing here
@@ -115,6 +116,10 @@ const AllStructureTable: React.FC<AllStructureTableProps> = ({onStructureRowClic
         accessorKey: 'transplanted',
         header: 'Transplanted',
       },
+      {
+        accessorKey: 'transplants',
+        header: 'Transplants',
+      }
     ],
     [],
   );
@@ -145,7 +150,7 @@ const AllStructureTable: React.FC<AllStructureTableProps> = ({onStructureRowClic
     mantineTableBodyRowProps: ({ row }) => {
       return {
           onClick: () => { //this was originally a cell click but changed due to added expansion.
-              const selected_structure = row.original.url as string;
+              const selected_structure = row.original.name as string;
               console.log(selected_structure);
               onStructureRowClick(selected_structure); // Pass the gencode ID to the parent
           }

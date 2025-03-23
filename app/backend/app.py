@@ -2,7 +2,7 @@ from fastapi import FastAPI, Depends, HTTPException, Query
 from typing import Annotated, List
 from sqlmodel import Session, select, func
 from .database import create_db_engine
-from .models import Structure, StructuresListResponse
+from .models import Structure, StructuresListResponse, Transplant, TransplantsListResponse
 from dotenv import load_dotenv
 import os
 from fastapi.middleware.cors import CORSMiddleware
@@ -57,6 +57,17 @@ def read_structures(
         data=structures,
         meta={"totalRowCount": total_count}
     )
+
+@app.get("/transplants/", response_model=TransplantsListResponse)
+def read_transplants(
+    session: SessionDep,
+    structure_name: str = Query(..., description="Filter transplants by structure name")
+) -> TransplantsListResponse:
+    transplants = session.exec(
+        select(Transplant).where(Transplant.structure_name == structure_name)
+    ).all()
+    
+    return TransplantsListResponse(data=transplants)
 
 @app.get("/search/", response_model=List[str])
 def search_structures(session: Session = Depends(get_session), query: str = Query("")):
