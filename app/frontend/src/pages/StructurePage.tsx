@@ -1,7 +1,7 @@
 import { useParams } from "react-router-dom";
 import { useEffect, useState } from "react";
 import AutoComplete from "../components/SearchBox";
-import { MolStarViewer } from "../components/MolStarViewer";
+import MolStarViewer from "../components/MolStarViewer";
 import TransplantTable from "../components/TransplantTable";
 import { Grid, Loader, Text } from "@mantine/core";
 

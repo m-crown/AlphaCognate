@@ -1,6 +1,7 @@
-import { useEffect, useRef } from "react";
+import { useEffect, createRef } from "react";
 import { createPluginUI } from "molstar/lib/mol-plugin-ui";
 import { renderReact18 } from "molstar/lib/mol-plugin-ui/react18";
+import { DefaultPluginUISpec } from 'molstar/lib/mol-plugin-ui/spec'
 import { PluginUIContext } from "molstar/lib/mol-plugin-ui/context";
 import "molstar/lib/mol-plugin-ui/skin/light.scss";
 
@@ -10,59 +11,59 @@ declare global {
   }
 }
 
-interface MolStarViewerProps {
-  pdbUrl: string;
-}
-
-export function MolStarViewer({ pdbUrl }: MolStarViewerProps) {
-  const parentRef = useRef<HTMLDivElement>(null);
+//Adapted from the molstar docs (https://molstar.org/docs/plugin/instance/)
+//Added the plugin UI spec and set to 100% of div to enable integration in grid component
+const MolstarViewer = () => {
+  const parent = createRef<HTMLDivElement>();
 
   useEffect(() => {
-    async function initMolStar() {
-      if (!parentRef.current) return;
+    async function init() {
+      const defaultSpec = DefaultPluginUISpec()
+      const spec = {
+        ...defaultSpec,
+        layout: {
+          initial: {
+            isExpanded: false,
+            showControls: false,
+            controlsDisplay: 'reactive',
+          },
+        },
+      }
 
-      // Dispose existing instance
-      window.molstar?.dispose();
-
-      // Ensure MolStar does not overflow its container
-      const container = parentRef.current;
-      container.style.position = "relative"; // Needed for proper rendering
-
-      // Initialize MolStar
       window.molstar = await createPluginUI({
-        target: container,
+        target: parent.current as HTMLDivElement,
+        spec,
         render: renderReact18,
       });
 
-      // Load the selected PDB file
       const data = await window.molstar.builders.data.download(
-        { url: pdbUrl },
+        { url: "https://files.rcsb.org/download/3PTB.pdb" }, /* replace with your URL */
         { state: { isGhost: true } }
       );
       const trajectory = await window.molstar.builders.structure.parseTrajectory(data, "pdb");
-      await window.molstar.builders.structure.hierarchy.applyPreset(trajectory, "default");
+      await window.molstar.builders.structure.hierarchy.applyPreset(
+        trajectory,
+        "default"
+      );
     }
-
-    initMolStar();
+    init();
 
     return () => {
       window.molstar?.dispose();
       window.molstar = undefined;
     };
-  }, [pdbUrl]);
+  }, []);
 
-  return (
-    <div
-      ref={parentRef}
-      style={{
-        maxHeight: '80vh',
-        maxWidth: '100%',
-        overflow: 'auto',
-        width: "100%",
-        height: "80vh", // Adjust height as needed
-        border: "1px solid black",
-        position: "relative",
-      }}
-    />
-  );
-}
+    return (
+      <div
+        ref={parent}
+        style={{
+          width: '100%',
+          height: '100%',
+          position: 'relative',
+        }}
+      />
+  )
+};
+
+export default MolstarViewer;
