@@ -9,3 +9,6 @@ app/.venv
 app/credentials/pg_db_pass.txt
 *.pyc
 /app/backend/.venv
+app/cif-files/.DS_Store
+.DS_Store
+/app/cif-files
