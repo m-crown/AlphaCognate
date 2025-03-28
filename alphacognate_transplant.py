@@ -257,11 +257,15 @@ def main():
     transplant_chain_ids = generate_chain_ids(num_transplants)
 
     #load the af structure to which ligands will be transplanted
+    #store some of the loops that get lost in processing to be handled later.
     af_structure = cif.read(predicted_structure_file)
     query_block = af_structure.sole_block()
     query_struct = gemmi.make_structure_from_block(query_block)
     query_struct.merge_chain_parts()
-    
+    chem_comp = pd.DataFrame(query_block.get_mmcif_category('_chem_comp.'))
+    struct_conf = query_block.get_mmcif_category('_struct_conf.')
+    struct_conf_type = query_block.get_mmcif_category('_struct_conf_type.')
+
     #we make a subset of the deduplicated bound entity specific information needed for transplanting and iterate through this.
     #post transplanting, we merge back the cognate information.
     foldseek_transplants = foldseek_file[["target", "assembly_chain_id_protein", "query_chain", "target_file", "uniqueID", "bound_entity_pdb_residues", "assembly_chain_id_ligand", "combined_interaction", "domain_profile", "interaction_domains", "rmsd", "qstart","tstart","qaln","taln"]].drop_duplicates(subset = ["target", "uniqueID", "assembly_chain_id_protein", "query_chain", "assembly_chain_id_ligand"])
@@ -319,15 +323,22 @@ def main():
                 transplant_chain_center_of_mass = np.nan
             else:
                 transplant_chain_center_of_mass = ",".join([str(x) for x in transplant_chain_center_of_mass])
-            query_struct[0].add_chain(transplant_chain)
-            query_struct.update_mmcif_block(query_block)
             
-            #explore if determine tcs could run before doing the actual transpalnt, and only pop a new chain id if the tcs is better than any pre-existing transplant of the same bound entity - cognate ligand mapping?
+            #get the transplant res names to update the chem_comp_table.
+            transplant_res_names = [res.name for res in transplant_chain]
+            transplant_chem_comp = pd.DataFrame(target_block.get_mmcif_category("_chem_comp."))
+            transplant_chem_comp_filtered = transplant_chem_comp.loc[transplant_chem_comp.id.isin(transplant_res_names)]
+
+            #add any new chem_comp entires from the transplant to the overall chem_comp df
+            chem_comp = pd.concat([chem_comp, transplant_chem_comp_filtered]).drop_duplicates(subset="id", keep="first").reset_index(drop=True)
+            
+            query_struct[0].add_chain(transplant_chain)
+
+            #TODO: explore if determine tcs could run before doing the actual transpalnt, and only pop a new chain id if the tcs is better than any pre-existing transplant of the same bound entity - cognate ligand mapping?
             tcs = determine_tcs(query_struct, transplant_chain_id)
 
             result.update({"accession": predicted_structure_id, "query_structure": query, "transplant_structure": target, "foldseek_rmsd": row.rmsd, "global_rmsd": global_rmsd, "ligand": row.uniqueID, "interaction": row.combined_interaction, "local_rmsd": local_rmsd, "tcs": tcs, "transplanted_structure_path": f"{args.outdir}/{predicted_structure_id}_transplants.cif.gz", "transplanted_ligand_chain": transplant_chain_id, "transplanted_ligand_residues": ",".join([str(x) for x in res_list]), "domain_residue_contacts": residue_mappings, "domain_residue_counts": interacting_domains, "domain_profile_match": procoggraph_map, "center_of_mass": transplant_chain_center_of_mass})
             transplants.append(result)
-            
         #convert individual transplant dictionaries into a single dataframe
         transplants_df = pd.DataFrame(transplants)
         transplants_df = transplants_df.merge(foldseek_other, on = "ligand", how = "left")
@@ -354,10 +365,24 @@ def main():
         #remove the split center of mass split column and the num transpalnts from the mmcif - it is implicit in the number of rows.
         transplant_dictionary = transplants_df[[col for col in transplants_df.columns if col not in ["center_of_mass_split", "num_transplants", "accession"]]].fillna("").astype("str").to_dict(orient = "list")
         #add the transplant dictionary as an mmcif category to the query block
+        #TODO: Consider adding information on AlphaCognate processing elsewhere in the file, and splitting this table.
         query_block.set_mmcif_category("_alphacognate", transplant_dictionary)
+        
+        #we have added new entities. Need to make sure theyre present in the _entity. loop.
+        query_struct.ensure_entities()
+
+        #update the query block with the new structure.
+        query_struct.update_mmcif_block(query_block)
+        
+        #update loops that get lost or modified in processing.
+        query_block.set_mmcif_category("_struct_conf.", struct_conf)
+        query_block.set_mmcif_category("_struct_conf_type.", struct_conf_type)
+        chem_comp = chem_comp.replace(False, "?")
+        chem_comp_dict = chem_comp.to_dict(orient = "list")
+        query_block.set_mmcif_category("_chem_comp.", chem_comp_dict)
+
         #output the AF structure with transplanted ligands
         query_block.write_file(f"{args.outdir}/{predicted_structure_id}_transplants.cif")
-
         transplants_df.to_csv(f"{args.outdir}/{predicted_structure_id}_transplants.tsv.gz", sep = "\t", index = False, compression = "gzip")
 
 if __name__ == "__main__":
