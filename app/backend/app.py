@@ -66,8 +66,10 @@ def read_transplants(
     transplants = session.exec(
         select(Transplant).where(Transplant.structure_name == structure_name)
     ).all()
+    structure = session.exec(select(Structure).where(Structure.name == structure_name)).first()
     
-    return TransplantsListResponse(data=transplants)
+    return TransplantsListResponse(transplant_data=transplants,
+                                   structure_data=structure)
 
 @app.get("/search/", response_model=List[str])
 def search_structures(session: Session = Depends(get_session), query: str = Query("")):

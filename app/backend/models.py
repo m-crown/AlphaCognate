@@ -39,4 +39,5 @@ class StructuresListResponse(BaseModel):
 
 # Define a Pydantic model for the entire API response
 class TransplantsListResponse(BaseModel):
-    data: List[Transplant]
+    transplant_data: List[Transplant]
+    structure_data: Structure
