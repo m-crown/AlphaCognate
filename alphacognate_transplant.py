@@ -12,7 +12,10 @@ import time
 import itertools
 import string
 import numpy as np
-from sklearn.cluster import HDBSCAN
+from sklearn.clusterimport HDBSCAN
+
+#TODO: Make a data model for the transplant in pydantic.
+#TODO: Consider column choices for transplants.
 
 def get_alignment_positions(foldseek_result, query_struct, query_chain, target_struct, target_chain):
     query_start = foldseek_result.qstart
@@ -230,7 +233,6 @@ def main():
     foldseek_file["fp"] = foldseek_file["structure_dir"] + "/" + foldseek_file["file_name"]
     predicted_structure_id = foldseek_file["accession"].values[0]
     predicted_structure_file = foldseek_file["fp"].values[0]
-
     if "error" in foldseek_file.columns:
         result = {"num_transplants": 0, "accession": predicted_structure_id, "query_structure": foldseek_file["file_name"].values[0], "transplant_structure": f"{args.outdir}/{predicted_structure_id}_transplants.cif.gz", "foldseek_rmsd": np.nan, "global_rmsd": np.nan, "ligand": np.nan, 'hetCode': np.nan, 'cognateLigand': np.nan, "interaction": np.nan, "local_rmsd": np.nan, "tcs": np.nan, "transplanted_structure_path": np.nan, "transplanted_ligand_chain": np.nan, "transplanted_ligand_residues": np.nan, "domain_residue_contacts": np.nan, "domain_residue_counts": np.nan, "domain_profile_match": np.nan, "center_of_mass": np.nan, "error": foldseek_file.error.values[0]}
         result_df = pd.DataFrame([result])
@@ -364,6 +366,8 @@ def main():
 
         #remove the split center of mass split column and the num transpalnts from the mmcif - it is implicit in the number of rows.
         transplant_dictionary = transplants_df[[col for col in transplants_df.columns if col not in ["center_of_mass_split", "num_transplants", "accession"]]].fillna("").astype("str").to_dict(orient = "list")
+
+        #TODO: remove the query_structure from output, make transplant path a separate column or loop to the file itself (make all of that be in a separate loop) Can split the dataframe up and dedup for this.
         #add the transplant dictionary as an mmcif category to the query block
         #TODO: Consider adding information on AlphaCognate processing elsewhere in the file, and splitting this table.
         query_block.set_mmcif_category("_alphacognate", transplant_dictionary)
