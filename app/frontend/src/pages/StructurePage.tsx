@@ -1,6 +1,5 @@
 import { useParams } from "react-router-dom";
 import { useEffect, useState } from "react";
-import AutoComplete from "../components/SearchBox";
 import MolStarViewer from "../components/MolStarViewer";
 import TransplantTable from "../components/TransplantTable";
 import { Grid, Loader, Text } from "@mantine/core";
@@ -29,6 +28,8 @@ function StructurePage() {
   const [transplants, setTransplants] = useState<Transplant[]>([]);
   const [structure, setStructure] = useState<Structure | null>(null);
   const [loading, setLoading] = useState(true);
+  //make a url for the structure viewer
+  const [structure_url, setStructureUrl] = useState<string | null>(null);
 
   useEffect(() => {
     if (id) {
@@ -46,8 +47,12 @@ function StructurePage() {
 
           setTransplants(json.transplant_data); // Update state with fetched data
           setStructure(json.structure_data);
-          console.log(json.structure);
-          console.log(json.transplants);
+          let structure_url = new URL(
+            json.structure_data?.url,
+            process.env.NODE_ENV === 'production'
+              ? 'http://localhost:8080/' //replace with prod url when it exists
+              : 'http://localhost:8080/',)
+          setStructureUrl(structure_url.href);
           setLoading(false); // Set loading to false after data is fetched
         } catch (error) {
           console.error(error);
@@ -64,10 +69,12 @@ function StructurePage() {
         {loading ? <Loader /> : <TransplantTable data={transplants} />}
       </Grid.Col>
       <Grid.Col span={6}>
-        <MolStarViewer url={structure?.url || ""} />
+
+        <MolStarViewer url={ structure_url || ""} /> 
       </Grid.Col>
     </Grid>
   );
 }
 
 export default StructurePage;
+        //structure?.url
