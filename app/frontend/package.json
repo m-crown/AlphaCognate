@@ -19,7 +19,7 @@
     "clsx": "^2.1.1",
     "dayjs": "^1.11.13",
     "mantine-react-table": "^2.0.0-beta.8",
-    "molstar": "^4.12.1",
+    "pako": "^2.1.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-router-dom": "^7.1.5"
