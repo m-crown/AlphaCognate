@@ -1,10 +1,7 @@
-import requests
 from pathlib import Path
-import subprocess
 import pandas as pd
 import gemmi
 import math
-import pandas as pd
 from gemmi import cif
 from operator import itemgetter
 import argparse
@@ -12,10 +9,47 @@ import time
 import itertools
 import string
 import numpy as np
-from sklearn.clusterimport HDBSCAN
+from sklearn.cluster import HDBSCAN
+from typing import Optional
+from pydantic import BaseModel
 
 #TODO: Make a data model for the transplant in pydantic.
 #TODO: Consider column choices for transplants.
+#TODO: Make errors a defined enum of values.
+class TransplantResult(BaseModel):
+    accession: Optional[str] = None
+    transplant_structure: Optional[str] = None
+    foldseek_rmsd: Optional[float] = None
+    global_rmsd: Optional[float] = None
+    local_rmsd: Optional[float] = None
+    ligand: Optional[str] = None
+    het_code: Optional[str] = None
+    tcs: Optional[float]
+    ligand_chain: Optional[str] = None
+    ligand_residues: Optional[str] = None
+    ligand_centre_of_mass: Optional[str] = None
+    ligand_cluster: Optional[int] = None
+    cognate_mapping_name: Optional[str] = None
+    cognate_mapping_smiles: Optional[str] = None
+    cognate_mapping_ec: Optional[str] = None
+    cognate_mapping_xref: Optional[str] = None
+    interaction: Optional[str] = None
+    domain_residue_contacts: Optional[str] = None
+    domain_residue_counts: Optional[str] = None
+    domain_profile_match: Optional[bool] = None
+    transplant_error: Optional[str] = None
+
+class AlphaCognateStructure(BaseModel):
+    accession: str
+    runtime: Optional[float] = None
+    num_transplants: Optional[int] = None #maybe num-transplants should represent the total number of transplants without error not actually made, not the number tested? i.e. should check this at the end of processing, not before.
+    error: Optional[str] = None
+    
+
+#TODO: WE CAN MAKE A COGNATE LIGAND CLASS OR SOMETHING TO ADD COMBINE WITH EACH TRASNSPLANT - AN OPTIONAL LIST OF COGNATE LIGANDS AND THEIR INFO - WOULD PROBABLY MAKE SENSE TO MOVE TO A NEW JSON FORMAT THEN.
+#or actually ,we could have another loop with the cognate ligand information for each ligand. How do we link these then? through chain id as a key ?
+
+#how would we handle cases where there is a foldseek error in terms of the transplanted ligands output? would we have a secondary output flat file or just keep the mmcif loop? Prefer keeping the mmcif loop.
 
 def get_alignment_positions(foldseek_result, query_struct, query_chain, target_struct, target_chain):
     query_start = foldseek_result.qstart
@@ -223,45 +257,55 @@ def main():
         print(f"Error: {args.structure_database_directory} does not exist.")
         return
 
-    #from foldseek github c++ code - not using but keeping here for future reference
-    threeAA2oneAA = {"ALA":'A', "ARG":'R', "ASN":'N', "ASP":'D', "CYS":'C', "GLN":'Q', "GLU":'E', "GLY":'G', "HIS":'H', "ILE":'I', "LEU":'L', "LYS":'K', "MET":'M', "PHE":'F', "PRO":'P', "SER":'S', "THR":'T', "TRP":'W', "TYR":'Y', "VAL":'V', "MSE":'M', "MLY":'K', "FME":'M', "HYP":'P',"TPO":'T', "CSO":'C', "SEP":'S', "M3L":'K',"HSK":'H', "SAC":'S', "PCA":'E', "DAL":'A',"CME":'C', "CSD":'C', "OCS":'C', "DPR":'P',"B3K":'K', "ALY":'K', "YCM":'C', "MLZ":'K',"4BF":'Y', "KCX":'K', "B3E":'E', "B3D":'D',"HZP":'P', "CSX":'C', "BAL":'A', "HIC":'H',"DBZ":'A', "DCY":'C', "DVA":'V', "NLE":'L',"SMC":'C', "AGM":'R', "B3A":'A', "DAS":'D',"DLY":'K', "DSN":'S', "DTH":'T', "GL3":'G',"HY3":'P', "LLP":'K', "MGN":'Q', "MHS":'H',"TRQ":'W', "B3Y":'Y', "PHI":'F', "PTR":'Y',"TYS":'Y', "IAS":'D', "GPL":'K', "KYN":'W',"SEC":'C'}
-
-
     #merge procoggraph data and foldseek data. then we do a foldseek itterrows but we should loop over the structures, where there could be multiple ligands to transplant in the same structure.
-    
     foldseek_file = pd.read_csv(args.foldseek_file, sep="\t")
     foldseek_file["fp"] = foldseek_file["structure_dir"] + "/" + foldseek_file["file_name"]
+    
+    #load the af structure to which ligands will be transplanted
     predicted_structure_id = foldseek_file["accession"].values[0]
     predicted_structure_file = foldseek_file["fp"].values[0]
-    if "error" in foldseek_file.columns:
-        result = {"num_transplants": 0, "accession": predicted_structure_id, "query_structure": foldseek_file["file_name"].values[0], "transplant_structure": f"{args.outdir}/{predicted_structure_id}_transplants.cif.gz", "foldseek_rmsd": np.nan, "global_rmsd": np.nan, "ligand": np.nan, 'hetCode': np.nan, 'cognateLigand': np.nan, "interaction": np.nan, "local_rmsd": np.nan, "tcs": np.nan, "transplanted_structure_path": np.nan, "transplanted_ligand_chain": np.nan, "transplanted_ligand_residues": np.nan, "domain_residue_contacts": np.nan, "domain_residue_counts": np.nan, "domain_profile_match": np.nan, "center_of_mass": np.nan, "error": foldseek_file.error.values[0]}
-        result_df = pd.DataFrame([result])
-        result_df.to_csv(f"{args.outdir}/{predicted_structure_id}_transplants.tsv.gz", sep = "\t", index = False, compression = "gzip")
 
-        #despite not doing anything to it, process the predicted structure with gemmi and output so that snakemake is happy.
+    af_structure = cif.read(predicted_structure_file)
+    query_block = af_structure.sole_block()
+
+    if "error" in foldseek_file.columns: ##eventually want to make this more robust - all foldseek file columns should be the same, the test would become if all the values in foldseek file .error are not na perhaps.
+
+        #set the structure error which is the foldseek file error.
+        alphacognate_structure = AlphaCognateStructure(
+            accession = predicted_structure_id,
+            error = foldseek_file.error.values[0],
+            runtime = 0,
+            num_transplants = 0
+            )
+        
+        #output an empty file with no transplants (predominantly because snakemake is expecting it)
+        transplantresult_df = pd.DataFrame([s.__dict__ for s in [transplants]])
+        transplantresult_df.to_csv(f"{args.outdir}/{predicted_structure_id}_transplants.tsv.gz", sep = "\t", index = False, compression = "gzip")
+        #
         af_structure = cif.read(predicted_structure_file)
         query_block = af_structure.sole_block()
+        query_block.set_mmcif_category("_alphacognate_structure", alphacognate_structure.dict()) #add alphacognate_structure loop with information on the structure overall.
         query_block.write_file(f"{args.outdir}/{predicted_structure_id}_transplants.cif")
         return
     
-    query = foldseek_file["query"].values[0]
+    #continuing processing foldseek results without errors.
     foldseek_file["domain_profile"] = foldseek_file["domain_profile"].str.split(";")
     foldseek_file["domain"] = foldseek_file["domain_profile"].apply(lambda x: [y.split(":")[0] for y in x])
     #convert bound entity pdb residues to list of ints - force to be a string first in case of places whrre there are no pipe delimiters in files.
     foldseek_file["bound_entity_pdb_residues"] = foldseek_file["bound_entity_pdb_residues"].astype("str").str.split("|").apply(lambda x : [int(y) for y in x])
     foldseek_file["interaction_domains"] = foldseek_file["combined_interaction"].str.split(";")
     foldseek_file["interaction_domains"] = foldseek_file["interaction_domains"].apply(lambda x : [y.split(":")[0] for y in x])
-    start_time = time.time()
-    transplants = []
-    error = None
     
-    num_transplants = foldseek_file.uniqueID.nunique() #its the number of ligands, not number of ligands mapped to cogligs that are transplanted
-    transplant_chain_ids = generate_chain_ids(num_transplants)
+    num_potential_transplants = foldseek_file.uniqueID.nunique() #its the number of ligands, not number of ligands mapped to cogligs that are transplanted
+    transplant_chain_ids = generate_chain_ids(num_potential_transplants)
 
-    #load the af structure to which ligands will be transplanted
+    
+    #for now, this is set after handling foldseek errors, but would be good to consolidate this eventually
+    transplants = [] #to store the transplants as we make them
+    start_time = time.time() #start the timer for overall transplants.
+
     #store some of the loops that get lost in processing to be handled later.
-    af_structure = cif.read(predicted_structure_file)
-    query_block = af_structure.sole_block()
+    #and ititiate an alphacognate_structure class
     query_struct = gemmi.make_structure_from_block(query_block)
     query_struct.merge_chain_parts()
     chem_comp = pd.DataFrame(query_block.get_mmcif_category('_chem_comp.'))
@@ -274,13 +318,18 @@ def main():
     #and the information we merge after transplant, on uniqueID
     foldseek_file["compound_name"] = foldseek_file.compound_name.apply(lambda x: x.split("|")[0] if isinstance(x, str) else np.nan)
     foldseek_other = foldseek_file[["uniqueID", "cognate_ligand", "hetCode", "compound_name", "pdb_ec_list", "score"]].rename(columns = {"uniqueID": "ligand","pdb_ec_list":"ecList", "score": "parityScore", "cognate_ligand": "cognateLigand"})
+    
     if not Path(f"{args.outdir}/{predicted_structure_id}_transplants.tsv.gz", sep = "\t").exists():
         for index, row in foldseek_transplants.iterrows():
-            result = {"num_transplants": num_transplants}
-            
+
             target = row["target"]
             target_chain = row["assembly_chain_id_protein"]
             query_chain = row["query_chain"]
+            #get the residues in the assembly that make up the ligand (and the chain they are in)
+            res_list = row.bound_entity_pdb_residues
+            res_chain = row.assembly_chain_id_ligand
+            #we get a new transplant chain id here, and if it is not used (because there are not enough local contacts)
+            transplant_chain_id = transplant_chain_ids.pop(0)
 
             target_doc = cif.read(f"{args.structure_database_directory}/{row.target_file}.cif.gz")
             target_block = target_doc.sole_block()
@@ -290,25 +339,46 @@ def main():
             query_alignment_range, target_alignment_range, query_alignment_range_atom, target_alignment_range_atom = get_alignment_positions(row, query_struct, query_chain, target_struct, target_chain)
 
             #superpose the query structure onto the target structure, using the alignment from foldseek result (the global alignment)
-            
-            
             sup = gemmi.superpose_positions(query_alignment_range, target_alignment_range)
             global_rmsd = sup.rmsd
-            target_struct[0].transform_pos_and_adp(sup.transform) #align the target structure onto the query structure
 
-            #get the residues in the assembly that make up the ligand (and the chain they are in)
-            res_list = row.bound_entity_pdb_residues
-            res_chain = row.assembly_chain_id_ligand
+            #update the global rmsd in the transplant record
+            transplantresult.global_rmsd = global_rmsd
+
+            target_struct[0].transform_pos_and_adp(sup.transform) #align the target structure onto the query structure
 
             #identify the contacts to the ligand that should be used to perform the 'local' alignment.
             local_superposition, contact_res_list = contact_search_target(target_struct, res_chain, res_list, 6, query_alignment_range, target_alignment_range, query_alignment_range_atom, target_alignment_range_atom)
             ##we can add a value of matched domain profiles? by checking the residue ranges?
             if local_superposition is not None:
                 local_rmsd = local_superposition.rmsd
+
+                #initiate a successful transplant result.
+                transplantresult = TransplantResult(
+                    accession = predicted_structure_id,
+                    transplant_structure = target,
+                    foldseek_rmsd = row.rmsd,
+                    global_rmsd = global_rmsd,
+                    local_rmsd = local_rmsd,
+                    ligand = row.uniqueID,
+                    interaction =  row.combined_interaction,
+                    ligand_chain = transplant_chain,
+                    ligand_residues = ",".join([str(x) for x in res_list]),
+                    )
             else:
-                error = "Not enough local contacts"
-                result.update({"accession": predicted_structure_id, "query_structure": query, "transplant_structure": target, "foldseek_rmsd": row.rmsd, "global_rmsd": global_rmsd, "ligand": row.uniqueID, "interaction": row.combined_interaction, "error": error, "center_of_mass": np.nan})
-                transplants.append(result)
+                #initiate a failed transplant result
+                transplantresult = TransplantResult(
+                    accession = predicted_structure_id,
+                    transplant_structure = target,
+                    foldseek_rmsd = row.rmsd,
+                    global_rmsd = global_rmsd,
+                    ligand = row.uniqueID,
+                    error = "Not enough local contacts"
+                    )
+                transplantresult.ligand_chain = None
+                transplants.append(transplantresult)
+                #return the unused transplant chain to the chain list.
+                transplant_chain_ids.insert(0, transplant_chain)
                 continue
             
             #check the domain profile of the ligand contacts matches the procoggraph mapping
@@ -318,9 +388,9 @@ def main():
 
             target_struct[0].transform_pos_and_adp(local_superposition.transform)
             
-            transplant_chain_id = transplant_chain_ids.pop(0)
             transplant_chain = create_transplant_chain(target_struct, res_chain, res_list, transplant_chain_id)
             transplant_chain_center_of_mass = transplant_chain.calculate_center_of_mass().tolist()
+            #TODO: How necessary is this if else statement? Shouldnt 
             if all([pd.isna(x) for x in transplant_chain_center_of_mass]):
                 transplant_chain_center_of_mass = np.nan
             else:
@@ -331,7 +401,7 @@ def main():
             transplant_chem_comp = pd.DataFrame(target_block.get_mmcif_category("_chem_comp."))
             transplant_chem_comp_filtered = transplant_chem_comp.loc[transplant_chem_comp.id.isin(transplant_res_names)]
 
-            #add any new chem_comp entires from the transplant to the overall chem_comp df
+            #add any new chem_comp entries from the transplant to the overall chem_comp df
             chem_comp = pd.concat([chem_comp, transplant_chem_comp_filtered]).drop_duplicates(subset="id", keep="first").reset_index(drop=True)
             
             query_struct[0].add_chain(transplant_chain)
@@ -339,8 +409,17 @@ def main():
             #TODO: explore if determine tcs could run before doing the actual transpalnt, and only pop a new chain id if the tcs is better than any pre-existing transplant of the same bound entity - cognate ligand mapping?
             tcs = determine_tcs(query_struct, transplant_chain_id)
 
-            result.update({"accession": predicted_structure_id, "query_structure": query, "transplant_structure": target, "foldseek_rmsd": row.rmsd, "global_rmsd": global_rmsd, "ligand": row.uniqueID, "interaction": row.combined_interaction, "local_rmsd": local_rmsd, "tcs": tcs, "transplanted_structure_path": f"{args.outdir}/{predicted_structure_id}_transplants.cif.gz", "transplanted_ligand_chain": transplant_chain_id, "transplanted_ligand_residues": ",".join([str(x) for x in res_list]), "domain_residue_contacts": residue_mappings, "domain_residue_counts": interacting_domains, "domain_profile_match": procoggraph_map, "center_of_mass": transplant_chain_center_of_mass})
-            transplants.append(result)
+            transplantresult_update = transplantresult.model_copy(
+                update = {
+                    "tcs" : tcs,
+                    "domain_residue_contacts" : residue_mappings, 
+                    "domain_residue_counts": interacting_domains,
+                    "domain_profile_match": procoggraph_map,
+                    "center_of_mass": transplant_chain_center_of_mass
+                }, deep = True) #setting deep = true makes new object referneces too
+            transplantsresult = TransplantResult(transplantresult_update.dict())
+            transplants.append(transplantsresult)
+
         #convert individual transplant dictionaries into a single dataframe
         transplants_df = pd.DataFrame(transplants)
         transplants_df = transplants_df.merge(foldseek_other, on = "ligand", how = "left")
@@ -362,7 +441,13 @@ def main():
         else:
             transplants_df["cluster"] = np.nan
         #add runtime to the dataframe and output to a tsv file
-        transplants_df["runtime"] = time.time() - start_time
+        #set the structure error which is the foldseek file error.
+        alphacognate_structure = AlphaCognateStructure(
+            accession = predicted_structure_id,
+            error = foldseek_file.error.values[0],
+            runtime = time.time() - start_time,
+            num_transplants = len(transplants)
+        )
 
         #remove the split center of mass split column and the num transpalnts from the mmcif - it is implicit in the number of rows.
         transplant_dictionary = transplants_df[[col for col in transplants_df.columns if col not in ["center_of_mass_split", "num_transplants", "accession"]]].fillna("").astype("str").to_dict(orient = "list")
@@ -370,7 +455,7 @@ def main():
         #TODO: remove the query_structure from output, make transplant path a separate column or loop to the file itself (make all of that be in a separate loop) Can split the dataframe up and dedup for this.
         #add the transplant dictionary as an mmcif category to the query block
         #TODO: Consider adding information on AlphaCognate processing elsewhere in the file, and splitting this table.
-        query_block.set_mmcif_category("_alphacognate", transplant_dictionary)
+        query_block.set_mmcif_category("_alphacognate_transplants", transplant_dictionary)
         
         #we have added new entities. Need to make sure theyre present in the _entity. loop.
         query_struct.ensure_entities()
@@ -384,6 +469,7 @@ def main():
         chem_comp = chem_comp.replace(False, "?")
         chem_comp_dict = chem_comp.to_dict(orient = "list")
         query_block.set_mmcif_category("_chem_comp.", chem_comp_dict)
+        query_block.set_mmcif_category("_alphacognate_structure", alphacognate_structure.dict()) #add alphacognate_structure loop with information on the structure overall.
 
         #output the AF structure with transplanted ligands
         query_block.write_file(f"{args.outdir}/{predicted_structure_id}_transplants.cif")
