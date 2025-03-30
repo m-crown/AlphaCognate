@@ -1,19 +1,21 @@
 import { useParams } from "react-router-dom";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import MolStarViewer from "../components/MolStarViewer";
 import TransplantTable from "../components/TransplantTable";
 import { Grid, Loader, Text } from "@mantine/core";
+import FocusButton from "../components/ViewerButton";
 
 type TransplantApiResponse = {
   transplant_data: Array<Transplant>;
   structure_data : Structure;
 };
 
-type Transplant = {
+export type Transplant = {
+  id: string;
   structure_name: string;
-  id: number;
-  date: string;
-  success: boolean;
+  ligand: string;
+  tcs: number;
+  struct_asym_id: string; //each transplant is on a separate chain.
 };
 
 //this is used in multiple places - abstract away
@@ -30,6 +32,7 @@ function StructurePage() {
   const [loading, setLoading] = useState(true);
   //make a url for the structure viewer
   const [structure_url, setStructureUrl] = useState<string | null>(null);
+  const viewerInstanceRef = useRef<any>(null);
 
   useEffect(() => {
     if (id) {
@@ -66,11 +69,12 @@ function StructurePage() {
   return (
     <Grid>
       <Grid.Col span={6}>
-        {loading ? <Loader /> : <TransplantTable data={transplants} />}
+        {loading ? <Loader /> : <TransplantTable data={transplants} viewerInstanceRef={viewerInstanceRef}/>}
+        <FocusButton viewerInstanceRef={viewerInstanceRef} />
       </Grid.Col>
       <Grid.Col span={6}>
 
-        <MolStarViewer url={ structure_url || ""} /> 
+        <MolStarViewer url={ structure_url || ""} viewerInstanceRef={viewerInstanceRef} /> 
       </Grid.Col>
     </Grid>
   );

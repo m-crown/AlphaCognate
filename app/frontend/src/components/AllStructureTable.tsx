@@ -16,11 +16,10 @@ type StructureApiResponse = {
 };
 
 type Structure = {
-  id: string;
   name: string;
   url: string;
   transplanted: boolean;
-  transplants: string;
+  num_transplants: number;
 };
 
 //need to have the row action thing here
@@ -100,11 +99,6 @@ const AllStructureTable: React.FC<AllStructureTableProps> = ({onStructureRowClic
   const columns = useMemo<MRT_ColumnDef<Structure>[]>(
     () => [
       {
-        accessorKey: 'id',
-        header: 'Structure ID',
-      },
-
-      {
         accessorKey: 'name',
         header: 'Structure Name',
       },
@@ -117,8 +111,8 @@ const AllStructureTable: React.FC<AllStructureTableProps> = ({onStructureRowClic
         header: 'Transplanted',
       },
       {
-        accessorKey: 'transplants',
-        header: 'Transplants',
+        accessorKey: 'num_transplants',
+        header: 'Num Transplants',
       }
     ],
     [],

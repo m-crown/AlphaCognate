@@ -7,23 +7,18 @@ import {
   type MRT_PaginationState,
   type MRT_SortingState,
 } from 'mantine-react-table';
-
-type Transplant = {
-  id: string;
-  structure_name: string;
-  date: string;
-};
+import type { Transplant } from '../pages/StructurePage';
 
 interface TransplantTableProps {
   data: Transplant[]; // Accept data as a prop
+  viewerInstanceRef: React.MutableRefObject<any>;
 }
 
-const TransplantTable = ({ data }: TransplantTableProps) => {
-  console.log("transplants")
-  console.log(data) 
+const TransplantTable = ({ data, viewerInstanceRef }: TransplantTableProps) => {
   // table state
   const [columnFilters, setColumnFilters] = useState<MRT_ColumnFiltersState>([]);
   const [globalFilter, setGlobalFilter] = useState('');
+  const [currentlyClicked, setCurrentlyClicked] = useState<string | null>(null);
   const [sorting, setSorting] = useState<MRT_SortingState>([]);
   const [pagination, setPagination] = useState<MRT_PaginationState>({
     pageIndex: 0,
@@ -41,9 +36,17 @@ const TransplantTable = ({ data }: TransplantTableProps) => {
         header: 'Structure Name',
       },
       {
-        accessorKey: 'date',
-        header: 'Date',
+        accessorKey: 'ligand',
+        header: 'Ligand',
       },
+      {
+        accessorKey: 'tcs',
+        header: 'tcs',
+      },
+      {
+        accessorKey: 'struct_asym_id',
+        header: 'Chain',
+      }
     ],
     [],
   );
@@ -52,15 +55,39 @@ const TransplantTable = ({ data }: TransplantTableProps) => {
     columns,
     data,
     enableRowSelection: true,
-    getRowId: (row) => row.id,
+    enableMultiRowSelection: false,
     initialState: { showColumnFilters: true },
-    manualFiltering: true,
-    manualPagination: true,
-    manualSorting: true,
-    onColumnFiltersChange: setColumnFilters,
-    onGlobalFilterChange: setGlobalFilter,
-    onPaginationChange: setPagination,
-    onSortingChange: setSorting,
+    mantineTableBodyRowProps: ({ row }) => {
+      return {
+        onClick: (event) => {
+          const selectedId = row.original.struct_asym_id;
+          if (currentlyClicked === selectedId) {
+            // Same row clicked again → Perform a different action
+            console.log("Clicked again, performing alternate action:", selectedId);
+    
+            if (viewerInstanceRef.current) {
+              viewerInstanceRef.current.visual.reset({camera: true }); // Example: Clear selection
+            }
+            
+            setCurrentlyClicked(null); // Optionally reset the selection
+
+          } else {
+            // Different row clicked → Normal behavior
+            console.log("New selection:", selectedId);
+    
+            if (viewerInstanceRef.current) {
+              viewerInstanceRef.current.visual.select({
+                 data: [{ auth_asym_id: selectedId, color: { r: 255, g: 255, b: 0 }, focus: true }],
+               });
+            }
+    
+            setCurrentlyClicked(selectedId);
+          };
+          row.getToggleSelectedHandler()(event);
+        },
+      };
+    },
+    
     state: {
       columnFilters,
       globalFilter,
