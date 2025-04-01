@@ -278,13 +278,11 @@ def main():
             num_transplants = 0
             )
         
-        #output an empty file with no transplants (predominantly because snakemake is expecting it)
-        transplantresult_df = pd.DataFrame([s.__dict__ for s in [transplants]])
-        transplantresult_df.to_csv(f"{args.outdir}/{predicted_structure_id}_transplants.tsv.gz", sep = "\t", index = False, compression = "gzip")
-        #
+        # Create an empty file with no transplants (predominantly because snakemake is expecting it)
+        Path(f"{args.outdir}/{predicted_structure_id}_transplants.tsv.gz").touch()
         af_structure = cif.read(predicted_structure_file)
         query_block = af_structure.sole_block()
-        query_block.set_mmcif_category("_alphacognate_structure", alphacognate_structure.dict()) #add alphacognate_structure loop with information on the structure overall.
+        query_block.set_mmcif_category("_alphacognate_structure", alphacognate_structure.model_dump()) #add alphacognate_structure loop with information on the structure overall.
         query_block.write_file(f"{args.outdir}/{predicted_structure_id}_transplants.cif")
         return
     
@@ -301,7 +299,7 @@ def main():
 
     
     #for now, this is set after handling foldseek errors, but would be good to consolidate this eventually
-    transplants = [] #to store the transplants as we make them
+    transplants: list[TransplantResult] = [] #to store the transplants as we make them
     start_time = time.time() #start the timer for overall transplants.
 
     #store some of the loops that get lost in processing to be handled later.
@@ -314,7 +312,10 @@ def main():
 
     #we make a subset of the deduplicated bound entity specific information needed for transplanting and iterate through this.
     #post transplanting, we merge back the cognate information.
-    foldseek_transplants = foldseek_file[["target", "assembly_chain_id_protein", "query_chain", "target_file", "uniqueID", "bound_entity_pdb_residues", "assembly_chain_id_ligand", "combined_interaction", "domain_profile", "interaction_domains", "rmsd", "qstart","tstart","qaln","taln"]].drop_duplicates(subset = ["target", "uniqueID", "assembly_chain_id_protein", "query_chain", "assembly_chain_id_ligand"])
+    foldseek_transplants = foldseek_file[["target", "assembly_chain_id_protein", "query_chain", "target_file", "uniqueID", 
+         "bound_entity_pdb_residues", "assembly_chain_id_ligand", "combined_interaction", 
+         "domain_profile", "interaction_domains", "rmsd", "qstart","tstart","qaln","taln"]].drop_duplicates(
+        subset = ["target", "uniqueID", "assembly_chain_id_protein", "query_chain", "assembly_chain_id_ligand"])
     #and the information we merge after transplant, on uniqueID
     foldseek_file["compound_name"] = foldseek_file.compound_name.apply(lambda x: x.split("|")[0] if isinstance(x, str) else np.nan)
     foldseek_other = foldseek_file[["uniqueID", "cognate_ligand", "hetCode", "compound_name", "pdb_ec_list", "score"]].rename(columns = {"uniqueID": "ligand","pdb_ec_list":"ecList", "score": "parityScore", "cognate_ligand": "cognateLigand"})
@@ -342,45 +343,31 @@ def main():
             sup = gemmi.superpose_positions(query_alignment_range, target_alignment_range)
             global_rmsd = sup.rmsd
 
-            #update the global rmsd in the transplant record
-            transplantresult.global_rmsd = global_rmsd
-
-            target_struct[0].transform_pos_and_adp(sup.transform) #align the target structure onto the query structure
+            #align the target structure onto the query structure
+            target_struct[0].transform_pos_and_adp(sup.transform)
 
             #identify the contacts to the ligand that should be used to perform the 'local' alignment.
             local_superposition, contact_res_list = contact_search_target(target_struct, res_chain, res_list, 6, query_alignment_range, target_alignment_range, query_alignment_range_atom, target_alignment_range_atom)
             ##we can add a value of matched domain profiles? by checking the residue ranges?
-            if local_superposition is not None:
-                local_rmsd = local_superposition.rmsd
-
-                #initiate a successful transplant result.
-                transplantresult = TransplantResult(
-                    accession = predicted_structure_id,
-                    transplant_structure = target,
-                    foldseek_rmsd = row.rmsd,
-                    global_rmsd = global_rmsd,
-                    local_rmsd = local_rmsd,
-                    ligand = row.uniqueID,
-                    interaction =  row.combined_interaction,
-                    ligand_chain = transplant_chain,
-                    ligand_residues = ",".join([str(x) for x in res_list]),
-                    )
-            else:
-                #initiate a failed transplant result
-                transplantresult = TransplantResult(
-                    accession = predicted_structure_id,
-                    transplant_structure = target,
-                    foldseek_rmsd = row.rmsd,
-                    global_rmsd = global_rmsd,
-                    ligand = row.uniqueID,
-                    error = "Not enough local contacts"
-                    )
-                transplantresult.ligand_chain = None
-                transplants.append(transplantresult)
+            if local_superposition is None:
+                # TODO: For now, do not keep failed transplants as it is unnecessary?
+                # #initiate a failed transplant result
+                # transplantresult = TransplantResult(
+                #     accession = predicted_structure_id,
+                #     transplant_structure = target,
+                #     foldseek_rmsd = row.rmsd,
+                #     global_rmsd = global_rmsd,
+                #     ligand = row.uniqueID,
+                #     ligand_chain = None
+                #     error = "Not enough local contacts"
+                #     )
+                
+                # transplants.append(transplantresult)
                 #return the unused transplant chain to the chain list.
                 transplant_chain_ids.insert(0, transplant_chain)
                 continue
             
+
             #check the domain profile of the ligand contacts matches the procoggraph mapping
             #the procoggraph map boolean value describes the match between domain contacts in af structure and expected interacting domains from coglig match. but we do not filter on this, leave it up to end user.
             residue_mappings, interacting_domains, procoggraph_map = check_domain_profile(row.domain_profile, contact_res_list, row.interaction_domains)
@@ -390,6 +377,7 @@ def main():
             
             transplant_chain = create_transplant_chain(target_struct, res_chain, res_list, transplant_chain_id)
             transplant_chain_center_of_mass = transplant_chain.calculate_center_of_mass().tolist()
+
             #TODO: How necessary is this if else statement? Shouldnt 
             if all([pd.isna(x) for x in transplant_chain_center_of_mass]):
                 transplant_chain_center_of_mass = np.nan
@@ -409,22 +397,34 @@ def main():
             #TODO: explore if determine tcs could run before doing the actual transpalnt, and only pop a new chain id if the tcs is better than any pre-existing transplant of the same bound entity - cognate ligand mapping?
             tcs = determine_tcs(query_struct, transplant_chain_id)
 
-            transplantresult_update = transplantresult.model_copy(
-                update = {
-                    "tcs" : tcs,
-                    "domain_residue_contacts" : residue_mappings, 
-                    "domain_residue_counts": interacting_domains,
-                    "domain_profile_match": procoggraph_map,
-                    "center_of_mass": transplant_chain_center_of_mass
-                }, deep = True) #setting deep = true makes new object referneces too
-            transplantsresult = TransplantResult(transplantresult_update.dict())
-            transplants.append(transplantsresult)
+            #get the local rmsd from the superposition previously performed
+            local_rmsd = local_superposition.rmsd
+
+            #initiate a successful transplant result.
+            transplantresult = TransplantResult(
+                accession = predicted_structure_id,
+                transplant_structure = target,
+                foldseek_rmsd = row.rmsd,
+                global_rmsd = global_rmsd,
+                local_rmsd = local_rmsd,
+                ligand = row.uniqueID,
+                interaction =  row.combined_interaction,
+                ligand_chain = transplant_chain,
+                ligand_residues = ",".join([str(x) for x in res_list]),
+                tcs = tcs,
+                domain_residue_contacts = residue_mappings,
+                domain_residue_counts = interacting_domains,
+                domain_profile_match = procoggraph_map,
+                center_of_mass = transplant_chain_center_of_mass
+                )
+
+            transplants.append(transplantresult)
 
         #convert individual transplant dictionaries into a single dataframe
-        transplants_df = pd.DataFrame(transplants)
+        transplants_df = pd.DataFrame([s.__dict__ for s in transplants])
         transplants_df = transplants_df.merge(foldseek_other, on = "ligand", how = "left")
         #calculate cluster membership with default hdbscan parameters for transplants
-        if not transplants_df["center_of_mass"].isna().all():
+        if not transplants_df["center_of_mass"].isna().all(): #again, is this necessary?
             transplants_df["center_of_mass_split"] = transplants_df["center_of_mass"].str.split(",")
             points = transplants_df.loc[(transplants_df.center_of_mass_split.isna() == False), "center_of_mass_split"].apply(lambda x: [float(y) for y in x]).values
             if len(points) < 5:
