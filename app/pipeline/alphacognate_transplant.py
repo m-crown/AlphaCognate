@@ -23,11 +23,11 @@ class TransplantResult(BaseModel):
     global_rmsd: Optional[float] = None
     local_rmsd: Optional[float] = None
     ligand: Optional[str] = None
-    het_code: Optional[str] = None
+    ligand_het_code: Optional[str] = None
     tcs: Optional[float]
     ligand_chain: Optional[str] = None
     ligand_residues: Optional[str] = None
-    ligand_centre_of_mass: Optional[str] = None
+    ligand_center_of_mass: Optional[str] = None
     ligand_cluster: Optional[int] = None
     cognate_mapping_name: Optional[str] = None
     cognate_mapping_smiles: Optional[str] = None
@@ -247,6 +247,7 @@ def main():
     parser.add_argument('--foldseek_file', type=str, help='Path to the processed foldseek file of structures to transplant.')
     parser.add_argument('--outdir', type=str, help='Path to the output directory. Created if missing')
     parser.add_argument('--structure_database_directory', type=str, help='Path to the directory containing the structures to transplant ligands from.')
+    parser.add_argument('--cognate_only', action='store_true', help='Only transplant ligands with cognate ligand mappings (from ProCogGraph database).')
     args = parser.parse_args()
 
     #check directories exist
@@ -258,7 +259,9 @@ def main():
         return
 
     #merge procoggraph data and foldseek data. then we do a foldseek itterrows but we should loop over the structures, where there could be multiple ligands to transplant in the same structure.
-    foldseek_file = pd.read_csv(args.foldseek_file, sep="\t")
+    foldseek_file = pd.read_csv(args.foldseek_file, sep="\t", na_values = ["NaN", "None"], keep_default_na = False)
+    if args.cognate_only:
+        foldseek_file = foldseek_file[foldseek_file["cognateLigand"].isna() == False]
     foldseek_file["fp"] = foldseek_file["structure_dir"] + "/" + foldseek_file["file_name"]
     
     #load the af structure to which ligands will be transplanted
@@ -282,7 +285,10 @@ def main():
         Path(f"{args.outdir}/{predicted_structure_id}_transplants.tsv.gz").touch()
         af_structure = cif.read(predicted_structure_file)
         query_block = af_structure.sole_block()
-        query_block.set_mmcif_category("_alphacognate_structure", alphacognate_structure.model_dump()) #add alphacognate_structure loop with information on the structure overall.
+        alphacognate_structure_dict = {k:[v] for k,v in alphacognate_structure.model_dump().items()}
+        alphacognate_structure_df = pd.DataFrame(alphacognate_structure_dict)
+        alphacognate_structure_df.to_csv(f"{args.outdir}/{predicted_structure_id}_structure_summary.tsv.gz", sep = "\t", index = False, compression = "gzip")
+        query_block.set_mmcif_category("_alphacognate_structure", alphacognate_structure_dict) #add alphacognate_structure loop with information on the structure overall.
         query_block.write_file(f"{args.outdir}/{predicted_structure_id}_transplants.cif")
         return
     
@@ -303,7 +309,6 @@ def main():
     start_time = time.time() #start the timer for overall transplants.
 
     #store some of the loops that get lost in processing to be handled later.
-    #and ititiate an alphacognate_structure class
     query_struct = gemmi.make_structure_from_block(query_block)
     query_struct.merge_chain_parts()
     chem_comp = pd.DataFrame(query_block.get_mmcif_category('_chem_comp.'))
@@ -312,17 +317,14 @@ def main():
 
     #we make a subset of the deduplicated bound entity specific information needed for transplanting and iterate through this.
     #post transplanting, we merge back the cognate information.
-    foldseek_transplants = foldseek_file[["target", "assembly_chain_id_protein", "query_chain", "target_file", "uniqueID", 
-         "bound_entity_pdb_residues", "assembly_chain_id_ligand", "combined_interaction", 
-         "domain_profile", "interaction_domains", "rmsd", "qstart","tstart","qaln","taln"]].drop_duplicates(
+    foldseek_transplants = foldseek_file[["target", "assembly_chain_id_protein", "query_chain", "target_file", "uniqueID", "bound_entity_pdb_residues", "assembly_chain_id_ligand", "combined_interaction", "domain_profile", "interaction_domains", "rmsd", "qstart","tstart","qaln","taln", "hetCode", "pdb_ligand_smiles"]].drop_duplicates(
         subset = ["target", "uniqueID", "assembly_chain_id_protein", "query_chain", "assembly_chain_id_ligand"])
     #and the information we merge after transplant, on uniqueID
     foldseek_file["compound_name"] = foldseek_file.compound_name.apply(lambda x: x.split("|")[0] if isinstance(x, str) else np.nan)
-    foldseek_other = foldseek_file[["uniqueID", "cognate_ligand", "hetCode", "compound_name", "pdb_ec_list", "score"]].rename(columns = {"uniqueID": "ligand","pdb_ec_list":"ecList", "score": "parityScore", "cognate_ligand": "cognateLigand"})
+    foldseek_other = foldseek_file[["uniqueID", "cognate_ligand", "compound_name", "pdb_ec_list", "score", "canonical_smiles", "ligand_db"]].rename(columns = {"uniqueID": "ligand","pdb_ec_list":"ecList", "score": "parityScore", "cognate_ligand": "cognateLigand", "canonical_smiles": "cognate_ligand_smiles", "ligand_db": "cognate_ligand_db_xref"})
     
     if not Path(f"{args.outdir}/{predicted_structure_id}_transplants.tsv.gz", sep = "\t").exists():
         for index, row in foldseek_transplants.iterrows():
-
             target = row["target"]
             target_chain = row["assembly_chain_id_protein"]
             query_chain = row["query_chain"]
@@ -364,7 +366,7 @@ def main():
                 
                 # transplants.append(transplantresult)
                 #return the unused transplant chain to the chain list.
-                transplant_chain_ids.insert(0, transplant_chain)
+                transplant_chain_ids.insert(0, transplant_chain_id)
                 continue
             
 
@@ -380,7 +382,7 @@ def main():
 
             #TODO: How necessary is this if else statement? Shouldnt 
             if all([pd.isna(x) for x in transplant_chain_center_of_mass]):
-                transplant_chain_center_of_mass = np.nan
+                transplant_chain_center_of_mass = ""
             else:
                 transplant_chain_center_of_mass = ",".join([str(x) for x in transplant_chain_center_of_mass])
             
@@ -408,72 +410,87 @@ def main():
                 global_rmsd = global_rmsd,
                 local_rmsd = local_rmsd,
                 ligand = row.uniqueID,
+                ligand_het_code = row.hetCode,
                 interaction =  row.combined_interaction,
-                ligand_chain = transplant_chain,
+                ligand_chain = transplant_chain_id,
                 ligand_residues = ",".join([str(x) for x in res_list]),
                 tcs = tcs,
                 domain_residue_contacts = residue_mappings,
                 domain_residue_counts = interacting_domains,
                 domain_profile_match = procoggraph_map,
-                center_of_mass = transplant_chain_center_of_mass
+                ligand_center_of_mass = transplant_chain_center_of_mass
                 )
-
+            
             transplants.append(transplantresult)
 
-        #convert individual transplant dictionaries into a single dataframe
-        transplants_df = pd.DataFrame([s.__dict__ for s in transplants])
-        transplants_df = transplants_df.merge(foldseek_other, on = "ligand", how = "left")
-        #calculate cluster membership with default hdbscan parameters for transplants
-        if not transplants_df["center_of_mass"].isna().all(): #again, is this necessary?
-            transplants_df["center_of_mass_split"] = transplants_df["center_of_mass"].str.split(",")
-            points = transplants_df.loc[(transplants_df.center_of_mass_split.isna() == False), "center_of_mass_split"].apply(lambda x: [float(y) for y in x]).values
-            if len(points) < 5:
-                transplants_df.loc[(transplants_df.center_of_mass_split.isna() == False), "cluster"] = -1
-            else:
-                #discuss this in a disccusion section.
-                points = np.array([np.array(point) for point in points])
-                params = {"min_cluster_size": 5, "min_samples": 5} #specifying the default values here for future configuration by user
-                hdb = HDBSCAN(**params).fit(points)
+        #sometimes no transplants with local contacts will be present i.e. 0 len transplants
+        if len(transplants) > 0:
+            #convert individual transplant dictionaries into a single dataframe
+            transplants_df = pd.DataFrame([s.model_dump() for s in transplants])
+            transplants_df = transplants_df.merge(foldseek_other, on = "ligand", how = "left")
+            #calculate cluster membership with default hdbscan parameters for transplants
+            if not (transplants_df["ligand_center_of_mass"] == "").all(): #again, is this necessary?
+                #this replacement is necessary because we set center of mass as string in transplant model. sometimes gemmi returns np.nan as the center of mass - investigate this.
+                transplants_df["center_of_mass_split"] = transplants_df["ligand_center_of_mass"].replace("", np.nan).str.split(",")
+                points = transplants_df.loc[(transplants_df.center_of_mass_split.isna() == False), "center_of_mass_split"].apply(lambda x: [float(y) for y in x]).values
+                if len(points) < 5:
+                    transplants_df.loc[(transplants_df.center_of_mass_split.isna() == False), "cluster"] = -1
+                else:
+                    #discuss this in a disccusion section.
+                    points = np.array([np.array(point) for point in points])
+                    params = {"min_cluster_size": 5, "min_samples": 5} #specifying the default values here for future configuration by user
+                    hdb = HDBSCAN(**params).fit(points)
 
-                #add cluster labels to the dataframe - clusters with fewer than 5 members will be labelled as noise and given -1 as a cluster value.
-                labels = hdb.labels_
-                transplants_df.loc[(transplants_df.center_of_mass_split.isna() == False), "cluster"] = labels
+                    #add cluster labels to the dataframe - clusters with fewer than 5 members will be labelled as noise and given -1 as a cluster value.
+                    labels = hdb.labels_
+                    transplants_df.loc[(transplants_df.center_of_mass_split.isna() == False), "cluster"] = labels
+                    transplants_df.loc[(transplants_df.center_of_mass_split.isna()), "cluster"] = -1
+            else:
+                transplants_df["cluster"] = 0
+            #add runtime to the dataframe and output to a tsv file
+            #set the structure error which is the foldseek file error.
+        
+            #remove the split center of mass split column and the num transpalnts from the mmcif - it is implicit in the number of rows.
+            transplants_df = transplants_df.drop(columns = ["center_of_mass_split"])
+            transplant_dictionary = transplants_df[[col for col in transplants_df.columns if col not in ["accession"]]].fillna("").astype("str").to_dict(orient = "list")
+
+            #TODO: remove the query_structure from output, make transplant path a separate column or loop to the file itself (make all of that be in a separate loop) Can split the dataframe up and dedup for this.
+            #add the transplant dictionary as an mmcif category to the query block
+            #TODO: Consider adding information on AlphaCognate processing elsewhere in the file, and splitting this table.
+            query_block.set_mmcif_category("_alphacognate_transplants", transplant_dictionary)
+            
+            #we have added new entities. Need to make sure theyre present in the _entity. loop.
+            query_struct.ensure_entities()
+
+            #update the query block with the new structure.
+            query_struct.update_mmcif_block(query_block)
+            
+            #update loops that get lost or modified in processing.
+            query_block.set_mmcif_category("_struct_conf.", struct_conf)
+            query_block.set_mmcif_category("_struct_conf_type.", struct_conf_type)
+            chem_comp = chem_comp.replace(False, "?")
+            chem_comp_dict = chem_comp.to_dict(orient = "list")
+            query_block.set_mmcif_category("_chem_comp.", chem_comp_dict)
+
+            transplants_df.to_csv(f"{args.outdir}/{predicted_structure_id}_transplants.tsv.gz", sep = "\t", index = False, compression = "gzip")
         else:
-            transplants_df["cluster"] = np.nan
-        #add runtime to the dataframe and output to a tsv file
-        #set the structure error which is the foldseek file error.
+            # Create an empty file with no transplants (predominantly because snakemake is expecting it)
+            Path(f"{args.outdir}/{predicted_structure_id}_transplants.tsv.gz").touch()
+        
         alphacognate_structure = AlphaCognateStructure(
             accession = predicted_structure_id,
-            error = foldseek_file.error.values[0],
             runtime = time.time() - start_time,
             num_transplants = len(transplants)
         )
 
-        #remove the split center of mass split column and the num transpalnts from the mmcif - it is implicit in the number of rows.
-        transplant_dictionary = transplants_df[[col for col in transplants_df.columns if col not in ["center_of_mass_split", "num_transplants", "accession"]]].fillna("").astype("str").to_dict(orient = "list")
-
-        #TODO: remove the query_structure from output, make transplant path a separate column or loop to the file itself (make all of that be in a separate loop) Can split the dataframe up and dedup for this.
-        #add the transplant dictionary as an mmcif category to the query block
-        #TODO: Consider adding information on AlphaCognate processing elsewhere in the file, and splitting this table.
-        query_block.set_mmcif_category("_alphacognate_transplants", transplant_dictionary)
-        
-        #we have added new entities. Need to make sure theyre present in the _entity. loop.
-        query_struct.ensure_entities()
-
-        #update the query block with the new structure.
-        query_struct.update_mmcif_block(query_block)
-        
-        #update loops that get lost or modified in processing.
-        query_block.set_mmcif_category("_struct_conf.", struct_conf)
-        query_block.set_mmcif_category("_struct_conf_type.", struct_conf_type)
-        chem_comp = chem_comp.replace(False, "?")
-        chem_comp_dict = chem_comp.to_dict(orient = "list")
-        query_block.set_mmcif_category("_chem_comp.", chem_comp_dict)
-        query_block.set_mmcif_category("_alphacognate_structure", alphacognate_structure.dict()) #add alphacognate_structure loop with information on the structure overall.
+        #tables need to be keys with lists
+        alphacognate_structure_dict = {k:[v] for k,v in alphacognate_structure.model_dump().items()}
+        alphacognate_structure_df = pd.DataFrame(alphacognate_structure_dict)
+        query_block.set_mmcif_category("_alphacognate_structure", alphacognate_structure_dict) #add alphacognate_structure loop with information on the structure overall.
 
         #output the AF structure with transplanted ligands
         query_block.write_file(f"{args.outdir}/{predicted_structure_id}_transplants.cif")
-        transplants_df.to_csv(f"{args.outdir}/{predicted_structure_id}_transplants.tsv.gz", sep = "\t", index = False, compression = "gzip")
+        alphacognate_structure_df.to_csv(f"{args.outdir}/{predicted_structure_id}_structure_summary.tsv.gz", sep = "\t", index = False, compression = "gzip")
 
 if __name__ == "__main__":
     main()

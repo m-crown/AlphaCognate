@@ -38,7 +38,7 @@ def main():
     foldseek_filtered = foldseek_combined.loc[(foldseek_combined.prob >= args.foldseek_prob_cutoff) & (foldseek_combined.alntmscore >= args.foldseek_alntmscore_cutoff) & (foldseek_combined.evalue <= args.foldseek_evalue_cutoff)]
     #foldseek_combined["accession"] = foldseek_combined["query"].apply(lambda x: os.path.basename(x).split(".")[0])
     foldseek_filtered_domains = foldseek_filtered.merge(predicted_structure_domains, on = "accession", how = "left")
-    procoggraph = pd.read_csv(args.procoggraph_data, sep="\t")
+    procoggraph = pd.read_csv(args.procoggraph_data, sep="\t",na_values = ["NaN", "None"], keep_default_na = False)
     procoggraph["bound_entity_chain"] = procoggraph["uniqueID"].str.split("_").apply(lambda x: x[2])
 
     foldseek_filtered_domains_cognate = foldseek_filtered_domains.merge(procoggraph, left_on = ["pdb_id", "target_chain"], right_on = ["pdb_id", "assembly_chain_id_protein"], how = "inner")
