@@ -19,7 +19,7 @@ class Structure(SQLModel, table=True):
 
     name: str = Field(primary_key=True)
     url: str
-    transplanted: bool
+    runtime: float
     num_transplants: int
     #eventually we could have new metadata on structure added here?
 

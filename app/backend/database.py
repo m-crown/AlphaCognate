@@ -1,7 +1,13 @@
 from typing import Optional
 from sqlmodel import Session, SQLModel, create_engine, select, text
 from sqlalchemy import URL
-from .models import Structure, Transplant  # Import both models
+
+#fastapi needs relative import, running directly needs direct.
+try:
+    from models import Structure, Transplant  # For standalone script execution
+except ImportError:
+    from .models import Structure, Transplant  # For FastAPI when run inside a package
+
 from dotenv import load_dotenv
 import os
 import psycopg2
@@ -61,7 +67,8 @@ def main() -> None:
     DB_USER = "admin"
     DB_HOST = "localhost"
     DB_NAME = "postgres"
-    TRANSPLANT_FILES_DIR = Path("/Users/matthewcrown/GitHub/AlphaCognate/app/cif-files")
+    TRANSPLANTS_FILE = Path("/Users/matthewcrown/GitHub/AlphaCognate/app/cif-files/combined_transplants.tsv.gz")
+    STRUCTURE_SUMMARY = Path("/Users/matthewcrown/GitHub/AlphaCognate/app/cif-files/combined_structure_summaries.tsv.gz")
     DB_PASSWORD = os.getenv("DB_PASSWORD")
 
     if DB_PASSWORD is None:
@@ -77,44 +84,44 @@ def main() -> None:
     #here we need to use the alphacognate tsv files from the gzipped files to build the database. Find and process these from a specified directory.
     structures = []
     transplants = []
-    for file in TRANSPLANT_FILES_DIR.glob("*.tsv.gz"):
-        transplants_df = pd.read_csv(TRANSPLANT_FILES_DIR / file, sep = "\t")
-        print(transplants_df.num_transplants.values[0].astype(int))
-        print(transplants_df.columns)
-        if "error" in transplants_df.columns:
-            transplants_df = transplants_df.loc[transplants_df.error.isna()]
-        if len(transplants_df) == 0:
-            continue
-        structures.append(Structure(
-            name = transplants_df.accession.values[0],
-            url = transplants_df.accession.values[0] + "_transplants.cif.gz",
-            transplanted = True,
-            num_transplants = int(transplants_df.num_transplants.fillna(0).values[0])
-        ))
-
-        for index, row in transplants_df.iterrows():
-            print(row.transplanted_ligand_chain)
-            if "tcs" in row.index:
-                if pd.notna(row.tcs):
-                    tcs = row.tcs
-                else:
-                    tcs = 0
+    transplants_df = pd.read_csv(TRANSPLANTS_FILE, sep = "\t")
+    #once we work out why structure info is in transplants can remove this - error should nto be present in trasnplants file.
+    if "error" in transplants_df.columns:
+        transplants_df = transplants_df.loc[transplants_df.error.isna()]
+    for index, row in transplants_df.iterrows():
+        if "tcs" in row.index:
+            if pd.notna(row.tcs):
+                tcs = row.tcs
             else:
                 tcs = 0
-            transplant = Transplant(
-                structure_name=row.accession,
-                ligand = row.ligand,
-                tcs = tcs,
-                struct_asym_id = row.transplanted_ligand_chain
-            )
-            transplants.append(transplant)
+        else:
+            tcs = 0
+        transplant = Transplant(
+            structure_name=row.accession,
+            ligand = row.ligand,
+            tcs = tcs,
+            struct_asym_id = row.ligand_chain
+        )
+        transplants.append(transplant)
 
-    print("done")
+    print("done transplants")
+
+    structures_df = pd.read_csv(STRUCTURE_SUMMARY, sep = "\t")
+    for index, row in structures_df.iterrows():
+        structures.append(Structure(
+            name = row.accession,
+            url = row.accession + "_transplants.cif.gz",
+            runtime = row.runtime,
+            num_transplants = int(row.num_transplants)
+        ))
 
     with Session(engine) as session:
         clear_tables(session)  # Clear existing records before adding new data
-
+        structure_names = []
         for structure in structures:
+            structure_names.append(structure.name)
+            if structure.name == -1:
+                print(structure)
             session.add(structure)
         session.commit()
 
@@ -124,6 +131,10 @@ def main() -> None:
 
         # Create some transplants for each structure
         for transplant in transplants:
+            if transplant.structure_name not in structure_names:
+                print(transplant)
+            if not transplant.structure_name:
+                print(transplant)
             session.add(transplant)
 
         session.commit()
