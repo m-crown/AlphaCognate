@@ -1,6 +1,13 @@
 import pandas as pd
 
+if not config["cognate_only"]:
+    config["cognate_only"] = ""
+else:
+    config["cognate_only"] = "--cognate_only"
+    
 structures = pd.read_csv(config["structure_manifest"], sep=",", names = ["accession", "file_name",  "structure_dir"]).accession.tolist()
+
+##need to add the structure summary files as expected outptus to piepline
 
 rule all:
     input: 
@@ -19,7 +26,7 @@ rule aggregate_transplants:
     log: config["output_dir"] + "/logs/aggregate_transplant.log"
     shell:
         """
-        python3 combine_tsv.py {params.tsv_dir} {params.output_dir}/combined_transplants.tsv.gz
+        python3 combine_tsv.py {params.tsv_dir} {params.output_dir}/combined_transplants.tsv.gz {params.output_dir}/combined_structure_summaries.tsv.gz
         """
 
 #need to check if the file is empty from foldseek
