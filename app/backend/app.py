@@ -1,8 +1,10 @@
 from fastapi import FastAPI, Depends, HTTPException, Query
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import JSONResponse
 from typing import Annotated, List
 from sqlmodel import Session, select, func
 from .database import create_db_engine
-from .models import Structure, StructuresListResponse, Transplant, TransplantsListResponse
+from .models import CognateLigand, CognateLigandResponse, Structure, StructuresListResponse, Transplant, TransplantFull, Ligand, CognateLigandMapping, TransplantResponse, TransplantsListResponse
 from dotenv import load_dotenv
 import os
 from fastapi.middleware.cors import CORSMiddleware
@@ -46,7 +48,7 @@ async def root():
 
 @app.get("/structures/", response_model=StructuresListResponse)
 def read_structures(
-        session: SessionDep,
+        session: Session = Depends(get_session),
         offset: int = 0,
         limit: Annotated[int, Query(le=100)] = 100,
 ) -> list[Structure]:
@@ -60,16 +62,57 @@ def read_structures(
 
 @app.get("/transplants/", response_model=TransplantsListResponse)
 def read_transplants(
-    session: SessionDep,
+    session: Session = Depends(get_session),
     structure_name: str = Query(..., description="Filter transplants by structure name")
 ) -> TransplantsListResponse:
+    
+    structure = session.exec(select(Structure).where(Structure.name == structure_name)).first()
+    
     transplants = session.exec(
         select(Transplant).where(Transplant.structure_name == structure_name)
     ).all()
-    structure = session.exec(select(Structure).where(Structure.name == structure_name)).first()
-    
-    return TransplantsListResponse(transplant_data=transplants,
-                                   structure_data=structure)
+
+    transplant_full_list = []
+    for transplant in transplants:
+        ligand = session.get(Ligand, transplant.ligand_id)
+        transplant_response = TransplantResponse(
+            transplant_id = transplant.id,
+            structure_name = transplant.structure_name,
+            ligand_id = transplant.ligand_id,
+            ligand_chain = transplant.ligand_chain,
+            ligand_residues = transplant.ligand_residues,
+            ec_list = transplant.ec_list,
+            tcs = transplant.tcs,
+            foldseek_rmsd = transplant.foldseek_rmsd,
+            global_rmsd = transplant.global_rmsd,
+            local_rmsd = transplant.local_rmsd,
+            hetcode = ligand.het_code,
+            name = ligand.name,
+            smiles = ligand.smiles
+        )
+        cognate_ligands = session.exec(
+            select(CognateLigandMapping).where(CognateLigandMapping.ligand_instance_id == transplant.id)
+        ).all()
+        cognate_ligand_response_list = []
+        for cognate_ligand in cognate_ligands:
+            cognate_ligand_detail = session.get(CognateLigand, cognate_ligand.cognate_ligand_id)
+            cognate_ligand_response = CognateLigandResponse(
+                id=cognate_ligand_detail.id,
+                name=cognate_ligand_detail.name,
+                smiles=cognate_ligand_detail.smiles,
+                xref=cognate_ligand_detail.xref,
+                similarity=cognate_ligand.similarity
+            )
+            cognate_ligand_response_list.append(cognate_ligand_response)
+        transplant_full_list.append(
+            TransplantFull(
+                transplant=transplant_response,
+                cognate_ligands=cognate_ligand_response_list
+            )
+        )
+
+    response_data = TransplantsListResponse(data=transplant_full_list, structure_data=structure)
+    return response_data
 
 @app.get("/search/", response_model=List[str])
 def search_structures(session: Session = Depends(get_session), query: str = Query("")):

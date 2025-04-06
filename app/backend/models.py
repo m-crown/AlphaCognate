@@ -2,44 +2,104 @@ from typing import Optional, List
 from pydantic import BaseModel
 from sqlmodel import Field, SQLModel, Relationship
 
-class Transplant(SQLModel, table=True):
-    __tablename__ = "transplants"
 
-    id: Optional[int] = Field(default=None, primary_key=True)
-    structure_name: str = Field(foreign_key="structures.name")  # Foreign key to Structure
-    ligand: str
-    tcs: float
-    struct_asym_id: str
+#TODO : DRAW OUT THE MODEL FOR THIS INTRERACTIONS TO UNDERSTAND IT BETTER
 
-    # Relationship: Each transplant is linked to one structure
-    structure: Optional["Structure"] = Relationship(back_populates="transplants")
+from typing import Optional, List
+from sqlmodel import SQLModel, Field, Relationship
+
 
 class Structure(SQLModel, table=True):
-    __tablename__ = "structures"
-
     name: str = Field(primary_key=True)
     url: str
     runtime: float
     num_transplants: int
-    #eventually we could have new metadata on structure added here?
 
-    # Relationship: A structure can have multiple transplants
     transplants: List["Transplant"] = Relationship(back_populates="structure")
 
-    def __repr__(self) -> str: #repr is a special instance that defines how an instance of a class is represented when you print it
-        return f"<Structure(name={self.name}, url={self.url}, transplanted={self.transplanted})>"
-    
+
+class Ligand(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str
+    het_code: str
+    smiles: str
+
+    instances: List["Transplant"] = Relationship(back_populates="ligand")
+
+
+class Transplant(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    structure_name: str = Field(foreign_key="structure.name")
+    ligand_id: int = Field(foreign_key="ligand.id")
+    ligand_chain: str
+    ligand_residues: str
+    ec_list: str
+
+    tcs: float
+    transplant_error: str
+    foldseek_rmsd: float
+    global_rmsd: float
+    local_rmsd: float
+
+    structure: Optional[Structure] = Relationship(back_populates="transplants")
+    ligand: Optional[Ligand] = Relationship(back_populates="instances")
+    mappings: List["CognateLigandMapping"] = Relationship(back_populates="ligand_instance")
+
+
+class CognateLigand(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str
+    smiles: str
+    xref: str
+
+    mappings: List["CognateLigandMapping"] = Relationship(back_populates="cognate_ligand")
+
+
+class CognateLigandMapping(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    ligand_instance_id: int = Field(foreign_key="transplant.id")
+    cognate_ligand_id: int = Field(foreign_key="cognateligand.id")
+    similarity: float
+
+    ligand_instance: Optional[Transplant] = Relationship(back_populates="mappings")
+    cognate_ligand: Optional[CognateLigand] = Relationship(back_populates="mappings")
 
 # Define a Pydantic model for the meta information
 class MetaResponse(BaseModel):
     totalRowCount: int
 
-# Define a Pydantic model for the entire API response
 class StructuresListResponse(BaseModel):
     data: List[Structure]
     meta: MetaResponse
 
-# Define a Pydantic model for the entire API response
+
+# Define a Pydantic model for the cognate ligand response - combines cognate ligand and cognate ligand mapping.
+class CognateLigandResponse(BaseModel):
+    id: int
+    name: str
+    smiles: str
+    xref: str
+    similarity: float
+
+class TransplantResponse(BaseModel):
+    transplant_id: int
+    structure_name: str
+    ligand_id: int
+    ligand_chain: str
+    ligand_residues: str
+    ec_list: str
+    tcs: float
+    foldseek_rmsd: float
+    global_rmsd: float
+    local_rmsd: float
+    hetcode: str
+    name: str
+    smiles: str
+    
+class TransplantFull(BaseModel):
+    transplant: TransplantResponse
+    cognate_ligands: List[CognateLigandResponse]
+
 class TransplantsListResponse(BaseModel):
-    transplant_data: List[Transplant]
+    data: List[TransplantFull]
     structure_data: Structure

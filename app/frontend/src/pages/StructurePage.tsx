@@ -4,22 +4,44 @@ import MolStarViewer from "../components/MolStarViewer";
 import TransplantTable from "../components/TransplantTable";
 import { Grid, Loader, Text } from "@mantine/core";
 import FocusButton from "../components/ViewerButton";
+import CognateLigandsTable from "../components/CognateLigandsTable";
 
-type TransplantApiResponse = {
-  transplant_data: Array<Transplant>;
-  structure_data : Structure;
+export type CognateLigand = {
+  id: number;
+  name: string;
+  smiles: string;
+  xref: string;
+  similarity: number;
 };
 
-export type Transplant = {
-  id: string;
+export type RawTransplant = {
+  transplant_id: number;
   structure_name: string;
-  ligand: string;
+  ligand_id: number;
+  ligand_chain: string;
+  ligand_residues: string;
+  ec_list: string;
   tcs: number;
-  struct_asym_id: string; //each transplant is on a separate chain.
+  foldseek_rmsd: number;
+  global_rmsd: number;
+  local_rmsd: number;
+  hetcode: string;
+  name: string;
+  smiles: string;
+};
+
+export type TransplantRecord = {
+  transplant: RawTransplant;
+  cognate_ligands: CognateLigand[];
+};
+
+export type TransplantApiResponse = {
+  data: TransplantRecord[];
+  structure_data: Structure;
 };
 
 //this is used in multiple places - abstract away
-type Structure = {
+export type Structure = {
   name: string;
   url: string;
   transplanted: boolean;
@@ -27,12 +49,29 @@ type Structure = {
 
 function StructurePage() {
   const { id } = useParams(); // Extract the ID from the URL
-  const [transplants, setTransplants] = useState<Transplant[]>([]);
+  const [transplants, setTransplants] = useState<TransplantRecord[]>([]);
   const [structure, setStructure] = useState<Structure | null>(null);
   const [loading, setLoading] = useState(true);
   //make a url for the structure viewer
   const [structure_url, setStructureUrl] = useState<string | null>(null);
   const viewerInstanceRef = useRef<any>(null);
+
+  const [cognateLigands, setCognateLigands] = useState([]); // State for cognate ligands
+
+  // Effect to log whenever cognateLigands changes
+  useEffect(() => {
+    if (cognateLigands.length > 0) {
+      console.log('Cognate ligands updated:', cognateLigands);
+    } else {
+      console.log('Cognate ligands is empty.');
+    }
+  }, [cognateLigands]); // Dependency array ensures this runs only when cognateLigands changes
+
+
+  // Callback to update cognate ligands
+  const updateCognateLigands = (ligands: CognateLigand[]) => {
+    setCognateLigands(ligands); // Update state with new cognate ligands
+  };
 
   useEffect(() => {
     if (id) {
@@ -47,8 +86,10 @@ function StructurePage() {
         try {
           const response = await fetch(url.href);
           const json = (await response.json()) as TransplantApiResponse;
-
-          setTransplants(json.transplant_data); // Update state with fetched data
+          if (!response.ok) {
+            throw new Error('Failed to fetch data');
+          }
+          setTransplants(json.data); // Update state with fetched data
           setStructure(json.structure_data);
           let structure_url = new URL(
             json.structure_data?.url,
@@ -69,8 +110,15 @@ function StructurePage() {
   return (
     <Grid>
       <Grid.Col span={6}>
-        {loading ? <Loader /> : <TransplantTable data={transplants} viewerInstanceRef={viewerInstanceRef}/>}
-        <FocusButton viewerInstanceRef={viewerInstanceRef} />
+        {loading ? <Loader /> : 
+          <TransplantTable 
+            data={transplants} 
+            viewerInstanceRef={viewerInstanceRef} 
+            cognateLigandsData={cognateLigands} 
+            updateCognateLigands={updateCognateLigands} 
+          />
+        }
+        <CognateLigandsTable cognateLigandsData={cognateLigands} />
       </Grid.Col>
       <Grid.Col span={6}>
 

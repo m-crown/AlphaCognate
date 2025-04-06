@@ -18,7 +18,7 @@ type StructureApiResponse = {
 type Structure = {
   name: string;
   url: string;
-  transplanted: boolean;
+  runtime: Float32Array;
   num_transplants: number;
 };
 
@@ -107,8 +107,8 @@ const AllStructureTable: React.FC<AllStructureTableProps> = ({onStructureRowClic
         header: 'URL',
       },
       {
-        accessorKey: 'transplanted',
-        header: 'Transplanted',
+        accessorKey: 'runtime',
+        header: 'Runtime',
       },
       {
         accessorKey: 'num_transplants',
@@ -122,11 +122,17 @@ const AllStructureTable: React.FC<AllStructureTableProps> = ({onStructureRowClic
     columns,
     data,
     enableRowSelection: true,
-    getRowId: (row) => row.id,
+    getRowId: (row) => row.name,
     initialState: { showColumnFilters: true },
     manualFiltering: true,
     manualPagination: true,
     manualSorting: true,
+    enableDensityToggle: false,
+    enableFullScreenToggle: false,
+    enableHiding: false,
+    enableGlobalFilter: false,
+    enableColumnActions: false,
+    enableColumnFilters: false,
     rowCount,
     onColumnFiltersChange: setColumnFilters,
     onGlobalFilterChange: setGlobalFilter,
@@ -140,6 +146,7 @@ const AllStructureTable: React.FC<AllStructureTableProps> = ({onStructureRowClic
       showAlertBanner: isError,
       showProgressBars: isRefetching,
       sorting,
+      density: 'xs'
     },
     mantineTableBodyRowProps: ({ row }) => {
       return {

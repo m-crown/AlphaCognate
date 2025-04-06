@@ -1,99 +1,90 @@
 import { useMemo, useState } from 'react';
 import {
   MantineReactTable,
+  MRT_RowSelectionState,
   useMantineReactTable,
-  type MRT_ColumnDef,
-  type MRT_ColumnFiltersState,
-  type MRT_PaginationState,
-  type MRT_SortingState,
+  type MRT_ColumnDef
 } from 'mantine-react-table';
-import type { Transplant } from '../pages/StructurePage';
+import type { TransplantRecord, CognateLigand } from '../pages/StructurePage';
 
 interface TransplantTableProps {
-  data: Transplant[]; // Accept data as a prop
-  viewerInstanceRef: React.MutableRefObject<any>;
+  data: TransplantRecord[]; // Accept data as a prop
+  viewerInstanceRef: React.RefObject<any>;
+  cognateLigandsData: CognateLigand[]; // New prop for cognate ligands data
+  updateCognateLigands: (ligands: CognateLigand[]) => void; // Callback to update cognate ligands in the parent
 }
 
-const TransplantTable = ({ data, viewerInstanceRef }: TransplantTableProps) => {
+const TransplantTable = ({ data, viewerInstanceRef, cognateLigandsData, updateCognateLigands }: TransplantTableProps) => {
   // table state
-  const [columnFilters, setColumnFilters] = useState<MRT_ColumnFiltersState>([]);
-  const [globalFilter, setGlobalFilter] = useState('');
   const [currentlyClicked, setCurrentlyClicked] = useState<string | null>(null);
-  const [sorting, setSorting] = useState<MRT_SortingState>([]);
-  const [pagination, setPagination] = useState<MRT_PaginationState>({
-    pageIndex: 0,
-    pageSize: 10,
-  });
+  const [rowSelection, setRowSelection] = useState<MRT_RowSelectionState>({});
 
-  const columns = useMemo<MRT_ColumnDef<Transplant>[]>(
+  const columns = useMemo<MRT_ColumnDef<TransplantRecord>[]>(
     () => [
       {
-        accessorKey: 'id',
+        accessorKey: 'transplant.ligand_id',
         header: 'Transplant ID',
       },
       {
-        accessorKey: 'structure_name',
+        accessorKey: 'transplant.structure_name',
         header: 'Structure Name',
       },
       {
-        accessorKey: 'ligand',
+        accessorKey: 'transplant.ligand_id',
         header: 'Ligand',
       },
       {
-        accessorKey: 'tcs',
+        accessorKey: 'transplant.tcs',
         header: 'tcs',
       },
       {
-        accessorKey: 'struct_asym_id',
+        accessorKey: 'transplant.ligand_chain',
         header: 'Chain',
       }
     ],
     [],
   );
 
+  // Filter cognate ligands for the selected ligand
+  const filteredCognateLigands = (ligandId: string) => {
+    return cognateLigandsData.filter(ligand => ligand.ligand_id === ligandId);
+  };
+
   const table = useMantineReactTable({
     columns,
     data,
-    enableRowSelection: true,
     enableMultiRowSelection: false,
     initialState: { showColumnFilters: true },
-    mantineTableBodyRowProps: ({ row }) => {
-      return {
-        onClick: (event) => {
-          const selectedId = row.original.struct_asym_id;
-          if (currentlyClicked === selectedId) {
-            // Same row clicked again → Perform a different action
-            console.log("Clicked again, performing alternate action:", selectedId);
-    
-            if (viewerInstanceRef.current) {
-              viewerInstanceRef.current.visual.reset({camera: true }); // Example: Clear selection
-            }
-            
-            setCurrentlyClicked(null); // Optionally reset the selection
-
-          } else {
-            // Different row clicked → Normal behavior
-            console.log("New selection:", selectedId);
-    
-            if (viewerInstanceRef.current) {
-              viewerInstanceRef.current.visual.select({
-                 data: [{ auth_asym_id: selectedId, color: { r: 255, g: 255, b: 0 }, focus: true }],
-               });
-            }
-    
-            setCurrentlyClicked(selectedId);
-          };
-          row.getToggleSelectedHandler()(event);
-        },
-      };
-    },
-    
+    mantineTableBodyRowProps: ({ row }) => ({
+      onClick: () => {
+        const selectedId = row.original.transplant.ligand_chain;
+        const alreadySelected = currentlyClicked === selectedId;
+        // Update the cognate ligands in the parent component
+        if (alreadySelected) {
+          viewerInstanceRef.current?.visual.reset({ camera: true });
+          setCurrentlyClicked(null);
+          setRowSelection({});
+        } else {
+          viewerInstanceRef.current?.visual.select({
+            data: [{ auth_asym_id: selectedId, color: { r: 255, g: 255, b: 0 }, focus: true }],
+          });
+          setCurrentlyClicked(selectedId);
+          setRowSelection({ [row.id]: true });
+          console.log('Selected row:', row.original);
+          updateCognateLigands(row.original.cognate_ligands);
+        }
+      },
+      selected: !!rowSelection[row.id], // tells MRT the row is "selected"
+      sx: (theme) => ({
+        cursor: 'pointer',
+        backgroundColor: rowSelection[row.id]
+          ? theme.colors.yellow[1] // or any selected color you want
+          : undefined,
+      }),
+    }),
     state: {
-      columnFilters,
-      globalFilter,
-      pagination,
-      sorting,
-    },
+      rowSelection,
+    }
   });
 
   return (

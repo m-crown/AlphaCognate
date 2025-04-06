@@ -4,9 +4,9 @@ from sqlalchemy import URL
 
 #fastapi needs relative import, running directly needs direct.
 try:
-    from models import Structure, Transplant  # For standalone script execution
+    from models import Ligand, Structure, Transplant, CognateLigand, CognateLigandMapping  # For standalone script execution
 except ImportError:
-    from .models import Structure, Transplant  # For FastAPI when run inside a package
+    from .models import Ligand, Structure, Transplant, CognateLigand, CognateLigandMapping   # For FastAPI when run inside a package
 
 from dotenv import load_dotenv
 import os
@@ -26,36 +26,89 @@ def create_db_engine(username, password, host, database, dbtype="postgresql"):
     engine = create_engine(url_object)
     return engine
 
-def drop_all_tables(dbname, user, password, host="localhost"):
-    """Drops all tables in the database without dropping the database itself."""
-    conn = psycopg2.connect(dbname=dbname, user=user, password=password, host=host)
-    conn.autocommit = True
-    cur = conn.cursor()
-
-    # Execute the SQL block to drop all tables
-    cur.execute("""
-        DO $$ 
-        DECLARE 
-            r RECORD;
-        BEGIN 
-            FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') 
-            LOOP 
-                EXECUTE 'DROP TABLE ' || quote_ident(r.tablename) || ' CASCADE'; 
-            END LOOP; 
-        END $$;
-    """)
-
-    cur.close()
-    conn.close()
+# Function to drop all tables in the database
+def drop_all_tables(engine):
+    with engine.connect() as conn:
+        conn.execute(text("DROP SCHEMA public CASCADE;"))
+        conn.execute(text("CREATE SCHEMA public;"))
+        conn.commit()
+        conn.close()
 
 def create_db_and_tables(engine):
-    SQLModel.metadata.create_all(engine)  # Ensures both Structure and Transplant tables are created
+    SQLModel.metadata.create_all(engine)
 
 def clear_tables(session):
     """Truncate tables to remove all existing records and reset primary keys."""
     session.exec(text("TRUNCATE TABLE transplants RESTART IDENTITY CASCADE;"))
     session.exec(text("TRUNCATE TABLE structures RESTART IDENTITY CASCADE;"))
+    session.exec(text("TRUNCATE TABLE cognate_ligands RESTART IDENTITY CASCADE;"))
     session.commit()
+
+def load_data(session, df_transplants, df_structures):
+    #load structures into db
+    for _, row in df_structures.iterrows():
+        structure = Structure(name=row['accession'], 
+                              url = row['accession'] + "_transplants.cif.gz",
+                              runtime=row['runtime'], 
+                              num_transplants=row['num_transplants'])
+        session.add(structure)
+
+    session.commit()  # Commit to save the structures in the database
+    
+    #group dataframe into each translpant and its associated coglig mappings
+
+    grouped_transplants = df_transplants.groupby(['accession', 'ligand'])
+    for _, group in grouped_transplants:
+        ligand_data = group.iloc[0]  # Take the first row to get ligand transplant and ligand details
+        ligand = session.exec(select(Ligand).where(Ligand.smiles == ligand_data['ligand_smiles'])).first()
+        
+        if not ligand:
+            # If the ligand doesn't exist, insert it
+            ligand = Ligand(
+                het_code=ligand_data['ligand_het_code'],
+                name = ligand_data['ligand_name'],
+                smiles=ligand_data['cognate_mapping_smiles'],
+            )
+            session.add(ligand)
+            session.commit()  # Commit to generate ligand id before referencing it in transplant
+
+        #insert transplant data.
+        transplant = Transplant(
+            structure_name=ligand_data['accession'], #ref to structure
+            ligand_id=ligand.id,  # Reference to the Ligand
+            ligand_chain=ligand_data['ligand_chain'],
+            ligand_residues=ligand_data['ligand_residues'],
+            ec_list=ligand_data['cognate_mapping_ec_list'],
+            tcs=float(ligand_data['tcs']),
+            transplant_error=float(ligand_data['transplant_error']),
+            foldseek_rmsd=float(ligand_data['foldseek_rmsd']),
+            global_rmsd=float(ligand_data['global_rmsd']),
+            local_rmsd=float(ligand_data['local_rmsd'])
+        )
+        session.add(transplant)
+
+        for _, row in group.iterrows():
+            #check if cognate ligand exists
+            coglig = session.exec(select(CognateLigand).where(CognateLigand.smiles == row['cognate_mapping_smiles'])).first()
+            if not coglig:
+                # If the cognate ligand doesn't exist, insert it
+                coglig = CognateLigand(
+                    id = row['cognate_mapping_id'], #we already have ids from procoggraph so can specify these for consistency.
+                    name=row['cognate_mapping_name'],
+                    smiles=row['cognate_mapping_smiles'],
+                    xref=row['cognate_mapping_xref']
+                )
+                session.add(coglig)
+                session.commit() # Commit to generate cognate ligand id before referencing it in mapping
+            #add the cognateligandmapping
+            cognate_mapping = CognateLigandMapping(
+                ligand_instance_id=transplant.id,  # Reference to the Transplant
+                cognate_ligand_id=coglig.id,  # Reference to the Cognate Ligand
+                similarity=row['cognate_mapping_similarity'],
+            )
+            session.add(cognate_mapping)
+
+    session.commit()  # Commit to save all Transplants and Cognate Ligands
 
 def main() -> None:
     """
@@ -67,84 +120,32 @@ def main() -> None:
     DB_USER = "admin"
     DB_HOST = "localhost"
     DB_NAME = "postgres"
+    DB_PASSWORD = os.getenv("DB_PASSWORD")
+
     TRANSPLANTS_FILE = Path("/Users/matthewcrown/GitHub/AlphaCognate/app/cif-files/combined_transplants.tsv.gz")
     STRUCTURE_SUMMARY = Path("/Users/matthewcrown/GitHub/AlphaCognate/app/cif-files/combined_structure_summaries.tsv.gz")
-    DB_PASSWORD = os.getenv("DB_PASSWORD")
 
     if DB_PASSWORD is None:
         raise ValueError("DB_PASSWORD environment variable is not set!")
-    
-    drop_all_tables(DB_NAME, DB_USER, DB_PASSWORD, host = DB_HOST)
 
     engine = create_db_engine(username=DB_USER, password=DB_PASSWORD, host=DB_HOST, database=DB_NAME)
-
+    
+    drop_all_tables(engine)
     create_db_and_tables(engine)
 
-
-    #here we need to use the alphacognate tsv files from the gzipped files to build the database. Find and process these from a specified directory.
-    structures = []
-    transplants = []
-    transplants_df = pd.read_csv(TRANSPLANTS_FILE, sep = "\t")
-    #once we work out why structure info is in transplants can remove this - error should nto be present in trasnplants file.
-    if "error" in transplants_df.columns:
-        transplants_df = transplants_df.loc[transplants_df.error.isna()]
-    for index, row in transplants_df.iterrows():
-        if "tcs" in row.index:
-            if pd.notna(row.tcs):
-                tcs = row.tcs
-            else:
-                tcs = 0
-        else:
-            tcs = 0
-        transplant = Transplant(
-            structure_name=row.accession,
-            ligand = row.ligand,
-            tcs = tcs,
-            struct_asym_id = row.ligand_chain
-        )
-        transplants.append(transplant)
-
-    print("done transplants")
-
-    structures_df = pd.read_csv(STRUCTURE_SUMMARY, sep = "\t")
-    for index, row in structures_df.iterrows():
-        structures.append(Structure(
-            name = row.accession,
-            url = row.accession + "_transplants.cif.gz",
-            runtime = row.runtime,
-            num_transplants = int(row.num_transplants)
-        ))
-
+    # Create session to interact with DB
     with Session(engine) as session:
-        clear_tables(session)  # Clear existing records before adding new data
-        structure_names = []
-        for structure in structures:
-            structure_names.append(structure.name)
-            if structure.name == -1:
-                print(structure)
-            session.add(structure)
-        session.commit()
+        # Load data from TSV files into pandas DataFrames
+        df_transplants = pd.read_csv(TRANSPLANTS_FILE, sep="\t", compression='gzip', dtype={'ligand_residues': str})
+        df_structures = pd.read_csv(STRUCTURE_SUMMARY, sep="\t", compression='gzip')
 
-        # Fetch structures to create transplants for them
-        statement = select(Structure)
-        results = session.exec(statement).all()
+        # # Optionally clear the tables if you want to load fresh data
+        # clear_tables(session)
 
-        # Create some transplants for each structure
-        for transplant in transplants:
-            if transplant.structure_name not in structure_names:
-                print(transplant)
-            if not transplant.structure_name:
-                print(transplant)
-            session.add(transplant)
-
-        session.commit()
-
-        # Print all structures and their transplants
-        # for structure in results:
-        #     print(structure.name)
-        #     transplants = session.exec(select(Transplant).where(Transplant.structure_name == structure.name)).all()
-        #     for transplant in transplants:
-        #         print("  ->", transplant)
+        # Load data into the database
+        load_data(session, df_transplants, df_structures)
+    
+    print("Data loaded successfully!")
 
 if __name__ == "__main__":
     main()
