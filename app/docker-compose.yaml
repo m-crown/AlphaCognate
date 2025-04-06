@@ -15,17 +15,17 @@ services:
     networks:
       - postgres-db-network
 
-  # pgadmin:
-  #   image: dpage/pgadmin4
-  #   environment:
-  #     PGADMIN_DEFAULT_EMAIL: 'teste@teste.com'
-  #     PGADMIN_DEFAULT_PASSWORD: 'teste'
-  #   ports:
-  #     - 16543:80
-  #   volumes:
-  #     - ./servers.json:/pgadmin4/servers.json
-  #   networks:
-  #     - postgres-db-network
+  pgadmin:
+     image: dpage/pgadmin4
+     environment:
+       PGADMIN_DEFAULT_EMAIL: 'teste@teste.com'
+       PGADMIN_DEFAULT_PASSWORD: 'teste'
+     ports:
+       - 16543:80
+     volumes:
+       - ./servers.json:/pgadmin4/servers.json
+     networks:
+       - postgres-db-network
 
   nginx:
     image: nginx:latest

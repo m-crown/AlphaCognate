@@ -10,12 +10,18 @@ import itertools
 import string
 import numpy as np
 from sklearn.cluster import HDBSCAN
-from typing import Optional
+from typing import Optional, List
 from pydantic import BaseModel
 
-#TODO: Make a data model for the transplant in pydantic.
+
 #TODO: Consider column choices for transplants.
 #TODO: Make errors a defined enum of values.
+
+class CognateMapping(BaseModel):
+    cognate_mapping_name: Optional[str] = None
+    cognate_mapping_smiles: Optional[str] = None
+    cognate_mapping_xref: Optional[str] = None
+
 class TransplantResult(BaseModel):
     accession: Optional[str] = None
     transplant_structure: Optional[str] = None
@@ -24,32 +30,22 @@ class TransplantResult(BaseModel):
     local_rmsd: Optional[float] = None
     ligand: Optional[str] = None
     ligand_het_code: Optional[str] = None
-    tcs: Optional[float]
+    ligand_name : Optional[str] = None
     ligand_chain: Optional[str] = None
     ligand_residues: Optional[str] = None
     ligand_center_of_mass: Optional[str] = None
-    ligand_cluster: Optional[int] = None
-    cognate_mapping_name: Optional[str] = None
-    cognate_mapping_smiles: Optional[str] = None
-    cognate_mapping_ec: Optional[str] = None
-    cognate_mapping_xref: Optional[str] = None
-    interaction: Optional[str] = None
+    ligand_smiles: Optional[str] = None
     domain_residue_contacts: Optional[str] = None
     domain_residue_counts: Optional[str] = None
     domain_profile_match: Optional[bool] = None
+    tcs: Optional[float] = None
     transplant_error: Optional[str] = None
 
 class AlphaCognateStructure(BaseModel):
     accession: str
     runtime: Optional[float] = None
-    num_transplants: Optional[int] = None #maybe num-transplants should represent the total number of transplants without error not actually made, not the number tested? i.e. should check this at the end of processing, not before.
+    num_transplants: Optional[int] = None
     error: Optional[str] = None
-    
-
-#TODO: WE CAN MAKE A COGNATE LIGAND CLASS OR SOMETHING TO ADD COMBINE WITH EACH TRASNSPLANT - AN OPTIONAL LIST OF COGNATE LIGANDS AND THEIR INFO - WOULD PROBABLY MAKE SENSE TO MOVE TO A NEW JSON FORMAT THEN.
-#or actually ,we could have another loop with the cognate ligand information for each ligand. How do we link these then? through chain id as a key ?
-
-#how would we handle cases where there is a foldseek error in terms of the transplanted ligands output? would we have a secondary output flat file or just keep the mmcif loop? Prefer keeping the mmcif loop.
 
 def get_alignment_positions(foldseek_result, query_struct, query_chain, target_struct, target_chain):
     query_start = foldseek_result.qstart
@@ -247,7 +243,8 @@ def main():
     parser.add_argument('--foldseek_file', type=str, help='Path to the processed foldseek file of structures to transplant.')
     parser.add_argument('--outdir', type=str, help='Path to the output directory. Created if missing')
     parser.add_argument('--structure_database_directory', type=str, help='Path to the directory containing the structures to transplant ligands from.')
-    parser.add_argument('--cognate_only', action='store_true', help='Only transplant ligands with cognate ligand mappings (from ProCogGraph database).')
+    parser.add_argument('--cognate_match', action='store_true', help='Only transplant ligands with cognate ligand mappings (from ProCogGraph database).')
+    parser.add_argument('--domain_match', action='store_true', help='Only transplant ligands with matching interactiosn to the ligand mapping (from ProCogGraph database).')
     args = parser.parse_args()
 
     #check directories exist
@@ -260,8 +257,10 @@ def main():
 
     #merge procoggraph data and foldseek data. then we do a foldseek itterrows but we should loop over the structures, where there could be multiple ligands to transplant in the same structure.
     foldseek_file = pd.read_csv(args.foldseek_file, sep="\t", na_values = ["NaN", "None"], keep_default_na = False)
-    if args.cognate_only:
-        foldseek_file = foldseek_file[foldseek_file["cognateLigand"].isna() == False]
+    
+    if args.cognate_match:
+        foldseek_file = foldseek_file[(foldseek_file["cognate_mapping_id"].isna() == False) & (foldseek_file.cognate_mapping_id != "")]
+
     foldseek_file["fp"] = foldseek_file["structure_dir"] + "/" + foldseek_file["file_name"]
     
     #load the af structure to which ligands will be transplanted
@@ -300,7 +299,7 @@ def main():
     foldseek_file["interaction_domains"] = foldseek_file["combined_interaction"].str.split(";")
     foldseek_file["interaction_domains"] = foldseek_file["interaction_domains"].apply(lambda x : [y.split(":")[0] for y in x])
     
-    num_potential_transplants = foldseek_file.uniqueID.nunique() #its the number of ligands, not number of ligands mapped to cogligs that are transplanted
+    num_potential_transplants = foldseek_file.ligand.nunique() #its the number of ligands, not number of ligands mapped to cogligs that are transplanted
     transplant_chain_ids = generate_chain_ids(num_potential_transplants)
 
     
@@ -317,11 +316,13 @@ def main():
 
     #we make a subset of the deduplicated bound entity specific information needed for transplanting and iterate through this.
     #post transplanting, we merge back the cognate information.
-    foldseek_transplants = foldseek_file[["target", "assembly_chain_id_protein", "query_chain", "target_file", "uniqueID", "bound_entity_pdb_residues", "assembly_chain_id_ligand", "combined_interaction", "domain_profile", "interaction_domains", "rmsd", "qstart","tstart","qaln","taln", "hetCode", "pdb_ligand_smiles"]].drop_duplicates(
-        subset = ["target", "uniqueID", "assembly_chain_id_protein", "query_chain", "assembly_chain_id_ligand"])
-    #and the information we merge after transplant, on uniqueID
-    foldseek_file["compound_name"] = foldseek_file.compound_name.apply(lambda x: x.split("|")[0] if isinstance(x, str) else np.nan)
-    foldseek_other = foldseek_file[["uniqueID", "cognate_ligand", "compound_name", "pdb_ec_list", "score", "canonical_smiles", "ligand_db"]].rename(columns = {"uniqueID": "ligand","pdb_ec_list":"ecList", "score": "parityScore", "cognate_ligand": "cognateLigand", "canonical_smiles": "cognate_ligand_smiles", "ligand_db": "cognate_ligand_db_xref"})
+    foldseek_transplants = foldseek_file[["target", "assembly_chain_id_protein", "query_chain", "target_file", "ligand", "bound_entity_pdb_residues", "assembly_chain_id_ligand", "combined_interaction", "domain_profile", "interaction_domains", "rmsd", "qstart","tstart","qaln","taln", "ligand_het_code", "ligand_smiles", "ligand_name"]].drop_duplicates(
+        subset = ["target", "ligand", "assembly_chain_id_protein", "query_chain", "assembly_chain_id_ligand"])
+    #and the information we merge after transplant, on ligand
+    foldseek_file["cognate_mapping_name"] = foldseek_file.cognate_mapping_name.apply(lambda x: x.split("|")[0] if isinstance(x, str) else np.nan)
+    #rename some columns here
+    foldseek_other = foldseek_file[["ligand", "cognate_mapping_id", "cognate_mapping_name", "cognate_mapping_ec_list", "cognate_mapping_similarity", "cognate_mapping_smiles", "cognate_mapping_xref"]]
+
     
     if not Path(f"{args.outdir}/{predicted_structure_id}_transplants.tsv.gz", sep = "\t").exists():
         for index, row in foldseek_transplants.iterrows():
@@ -359,7 +360,7 @@ def main():
                 #     transplant_structure = target,
                 #     foldseek_rmsd = row.rmsd,
                 #     global_rmsd = global_rmsd,
-                #     ligand = row.uniqueID,
+                #     ligand = row.ligand,
                 #     ligand_chain = None
                 #     error = "Not enough local contacts"
                 #     )
@@ -373,7 +374,10 @@ def main():
             #check the domain profile of the ligand contacts matches the procoggraph mapping
             #the procoggraph map boolean value describes the match between domain contacts in af structure and expected interacting domains from coglig match. but we do not filter on this, leave it up to end user.
             residue_mappings, interacting_domains, procoggraph_map = check_domain_profile(row.domain_profile, contact_res_list, row.interaction_domains)
-
+            if args.domain_match and not procoggraph_map:
+                #if no domain match is found, we do not want to transplant the ligand.
+                transplant_chain_ids.insert(0, transplant_chain_id)
+                continue
 
             target_struct[0].transform_pos_and_adp(local_superposition.transform)
             
@@ -409,8 +413,10 @@ def main():
                 foldseek_rmsd = row.rmsd,
                 global_rmsd = global_rmsd,
                 local_rmsd = local_rmsd,
-                ligand = row.uniqueID,
-                ligand_het_code = row.hetCode,
+                ligand = row.ligand,
+                ligand_het_code = row.ligand_het_code,
+                ligand_name = row.ligand_name,
+                ligand_smiles = row.ligand_smiles,
                 interaction =  row.combined_interaction,
                 ligand_chain = transplant_chain_id,
                 ligand_residues = ",".join([str(x) for x in res_list]),
@@ -420,12 +426,12 @@ def main():
                 domain_profile_match = procoggraph_map,
                 ligand_center_of_mass = transplant_chain_center_of_mass
                 )
-            
             transplants.append(transplantresult)
 
         #sometimes no transplants with local contacts will be present i.e. 0 len transplants
         if len(transplants) > 0:
             #convert individual transplant dictionaries into a single dataframe
+            #need to consider how to do model dump with list of coglig mappings in future.
             transplants_df = pd.DataFrame([s.model_dump() for s in transplants])
             transplants_df = transplants_df.merge(foldseek_other, on = "ligand", how = "left")
             #calculate cluster membership with default hdbscan parameters for transplants
@@ -447,17 +453,33 @@ def main():
                     transplants_df.loc[(transplants_df.center_of_mass_split.isna()), "cluster"] = -1
             else:
                 transplants_df["cluster"] = 0
-            #add runtime to the dataframe and output to a tsv file
-            #set the structure error which is the foldseek file error.
         
             #remove the split center of mass split column and the num transpalnts from the mmcif - it is implicit in the number of rows.
             transplants_df = transplants_df.drop(columns = ["center_of_mass_split"])
-            transplant_dictionary = transplants_df[[col for col in transplants_df.columns if col not in ["accession"]]].fillna("").astype("str").to_dict(orient = "list")
+            #save to file incl. all cognate mapping
+            transplants_df.to_csv(f"{args.outdir}/{predicted_structure_id}_transplants.tsv.gz", sep = "\t", index = False, compression = "gzip")
 
-            #TODO: remove the query_structure from output, make transplant path a separate column or loop to the file itself (make all of that be in a separate loop) Can split the dataframe up and dedup for this.
+            #split out the cognate info to separate table.
+            cognate_mapping_df = transplants_df[["ligand", "cognate_mapping_name", "cognate_mapping_smiles", "cognate_mapping_xref", "cognate_mapping_ec_list"]].drop_duplicates()
+            
+            # Keep rows where at least one of the cognate columns is not empty
+            mask = (cognate_mapping_df[["cognate_mapping_name", "cognate_mapping_smiles", "cognate_mapping_xref"]]
+                    .replace("", np.nan)
+                    .notna()
+                    .any(axis=1))
+
+            # Apply the mask
+            cognate_mapping_df = cognate_mapping_df[mask]
+
+            cognate_mapping_dict = cognate_mapping_df.fillna("").astype("str").to_dict(orient = "list")
+
+            #create a dictionary of the transplant data to add as an mmcif category. can remove duplicates due to multiple coglig mappings here.
+            transplants_df = transplants_df[[col for col in transplants_df.columns if col not in ["accession", "cognate_mapping_id", "cognate_mapping_name", "cognate_mapping_smiles", "cognate_mapping_xref", "cognate_mapping_ec_list", "cognate_mapping_similarity"]]].drop_duplicates()
+            transplant_dictionary = transplants_df.fillna("").astype("str").to_dict(orient = "list")
             #add the transplant dictionary as an mmcif category to the query block
-            #TODO: Consider adding information on AlphaCognate processing elsewhere in the file, and splitting this table.
             query_block.set_mmcif_category("_alphacognate_transplants", transplant_dictionary)
+            #add the cognate mapping dictionary as an mmcif category to the query block
+            query_block.set_mmcif_category("_alphacognate_cognate_mapping", cognate_mapping_dict)
             
             #we have added new entities. Need to make sure theyre present in the _entity. loop.
             query_struct.ensure_entities()
@@ -472,7 +494,6 @@ def main():
             chem_comp_dict = chem_comp.to_dict(orient = "list")
             query_block.set_mmcif_category("_chem_comp.", chem_comp_dict)
 
-            transplants_df.to_csv(f"{args.outdir}/{predicted_structure_id}_transplants.tsv.gz", sep = "\t", index = False, compression = "gzip")
         else:
             # Create an empty file with no transplants (predominantly because snakemake is expecting it)
             Path(f"{args.outdir}/{predicted_structure_id}_transplants.tsv.gz").touch()

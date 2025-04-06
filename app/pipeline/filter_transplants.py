@@ -53,9 +53,9 @@ def main():
     #as standard, we remove rows from the dataframe where there was an error - so nothing was transplanted from that structure
     #then remaining params set by input.
     if "error" in structure_transplants.columns:
-        transplants_to_retain = structure_transplants.loc[(structure_transplants.error.isna()) & (structure_transplants.domain_profile_match.isin(domain_match)) & (structure_transplants.cognateLigand.isna().isin(cognate_match))].copy()
+        transplants_to_retain = structure_transplants.loc[(structure_transplants.error.isna()) & (structure_transplants.domain_profile_match.isin(domain_match)) & (structure_transplants.cognate_ligand.isna().isin(cognate_match))].copy()
     else:
-        transplants_to_retain = structure_transplants.loc[(structure_transplants.domain_profile_match.isin(domain_match)) & (structure_transplants.cognateLigand.isna().isin(cognate_match))].copy()
+        transplants_to_retain = structure_transplants.loc[(structure_transplants.domain_profile_match.isin(domain_match)) & (structure_transplants.cognate_ligand.isna().isin(cognate_match))].copy()
     
     if args.recluster:
         if not transplants_to_retain["center_of_mass"].isna().all():
@@ -92,7 +92,7 @@ def main():
     
     #need to update the num transplants in the output tsv file and set the accession that is not present in the mmcif file the data is loaded from
     transplants_to_retain["num_transplants"] = len(transplants_to_retain)
-    print(f"From {len(structure_transplants.transplanted_chain.nunique())} transplants, {len(transplants_to_retain.transplanted_chain.nunique())} were retained")
+    print(f"From {structure_transplants.transplanted_ligand_chain.nunique()} transplants, {transplants_to_retain.transplanted_ligand_chain.nunique()} were retained")
     #set the accession to be all parts of the filename before _transplants.cif.gz
     transplants_to_retain["accession"] = re.search(r'AF-[\w-]+(?=_transplants)', args.structure).group(0)
     transplants_to_retain.to_csv(args.output_file.replace(".cif", ".tsv.gz"), sep="\t", index=False, compression = "gzip")
@@ -100,11 +100,8 @@ def main():
     transplant_dictionary = transplants_to_retain[[col for col in transplants_to_retain.columns if col not in ["center_of_mass_split", "num_transplants", "accession"]]].fillna("").astype("str").to_dict(orient = "list")
     #add the transplant dictionary as an mmcif category to the query block
     query_block.set_mmcif_category("_alphacognate", transplant_dictionary)
-
     #write the updated file
     query_block.write_file(args.output_file)
 
 if __name__ == "__main__":
     main()
-
-#note for future: the filtering of best match - which is done by tcs - should filter the best ligand transplant within a cluster, but by het code - so multiple ligands can be retained within a cluster location, but only the best example is retained.

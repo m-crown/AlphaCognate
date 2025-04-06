@@ -39,7 +39,9 @@ def main():
     #foldseek_combined["accession"] = foldseek_combined["query"].apply(lambda x: os.path.basename(x).split(".")[0])
     foldseek_filtered_domains = foldseek_filtered.merge(predicted_structure_domains, on = "accession", how = "left")
     procoggraph = pd.read_csv(args.procoggraph_data, sep="\t",na_values = ["NaN", "None"], keep_default_na = False)
-    procoggraph["bound_entity_chain"] = procoggraph["uniqueID"].str.split("_").apply(lambda x: x[2])
+    procoggraph["bound_entity_chain"] = procoggraph["ligand"].str.split("_").apply(lambda x: x[2])
+
+    print(procoggraph.columns)
 
     foldseek_filtered_domains_cognate = foldseek_filtered_domains.merge(procoggraph, left_on = ["pdb_id", "target_chain"], right_on = ["pdb_id", "assembly_chain_id_protein"], how = "inner")
 
@@ -50,8 +52,8 @@ def main():
         structure = group["accession"].values[0]
         #additionally limti at n structures maximum
         group = group.sort_values("evalue",ascending = True)
-        top_targets = group[["uniqueID","evalue"]].drop_duplicates().sort_values("evalue",ascending = True).head(args.max_structures).uniqueID.values
-        group_filtered = group.loc[group["uniqueID"].isin(top_targets)].copy()
+        top_targets = group[["ligand","evalue"]].drop_duplicates().sort_values("evalue",ascending = True).head(args.max_structures).ligand.values
+        group_filtered = group.loc[group["ligand"].isin(top_targets)].copy()
         #group_filtered = group.sort_values("evalue", ascending = True).head(args.max_structures).copy()
         group_filtered.to_csv(f"{args.output_dir}/{structure}_foldseek.tsv.gz", sep="\t", index=False, compression = "gzip")
 
