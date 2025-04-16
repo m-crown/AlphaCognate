@@ -12,3 +12,7 @@ app/credentials/pg_db_pass.txt
 app/cif-files/.DS_Store
 .DS_Store
 /app/cif-files
+/alphacognate_pipeline/.snakemake
+/alphacognate_pipeline/data
+/alphacognate_pipeline/demo_out
+/alphacognate_webapp/backend/.venv

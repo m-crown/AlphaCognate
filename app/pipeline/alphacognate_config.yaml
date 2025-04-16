@@ -1,9 +1,0 @@
-structure_dir: "test_struct_dir"
-structure_manifest: "untitled.txt"
-output_dir: "test_output_dir"
-procoggraph_foldseek_db: "/raid/MattC/repos/foldseek/pcgDB"
-procoggraph_foldseek_directory: "/raid/MattC/repos/foldseek/pcg_assemblies"
-procoggraph_foldseek_db_index: "/raid/MattC/repos/foldseek/pcgDB_index"
-predicted_structure_domains: "/raid/MattC/repos/alpha_cognate/cath_alphafold_domains.tsv.gz"
-procoggraph_data: "cath_single_chain_domain_interactions.tsv.gz"
-cognate_only: true
