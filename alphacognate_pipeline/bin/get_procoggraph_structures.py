@@ -4,13 +4,23 @@ from pathlib import Path
 import requests
 from gemmi import cif
 import math
+import gzip
+import os 
 
 def make_modelserver_query(pdb_ids, outdir , chunk_size = 50):
     protonated_id_list = []
 
     for i in range(0, len(pdb_ids), chunk_size):
         protonated_query_ids = pdb_ids[i:i+chunk_size]
-        print(f"Protonated Chunk {i}") 
+        print(f"Protonated Chunk {i}")
+        for id in protonated_query_ids:
+            if os.path.exists(f"{outdir}/{id}_bio-h.cif.gz"): 
+                print(f"File {id}_bio-h.cif.gz already exists, skipping download.")
+                protonated_id_list.append(id)
+                protonated_query_ids.remove(id)
+        if len(protonated_query_ids) == 0:
+            print("All files already downloaded, skipping query")
+            continue
         protonated_assembly_query_list = [{"entryId": pdb, "query": "full", "data_source":"pdb-h"} for pdb in protonated_query_ids]
         protonated_assembly_query_json = {"queries": protonated_assembly_query_list}
 
@@ -29,17 +39,18 @@ def make_modelserver_query(pdb_ids, outdir , chunk_size = 50):
                 else:
                     pdb_id = block.find_pair("_entry.id")[1].lower()
                     protonated_id_list.append(pdb_id)
-                    block.write_file(f"{outdir}/{pdb_id}_bio-h.cif")
+                    with gzip.open(f"{outdir}/{pdb_id}_bio-h.cif.gz", "wt") as f:
+                        f.write(block.as_string())
             print("Response processed")
         elif protonated_assembly_response.status_code == 503:
             #if the request fails, try again at normal chunk size
-            protonated_ids = make_modelserver_query(protonated_query_ids, chunk_size = chunk_size)
+            protonated_ids = make_modelserver_query(protonated_query_ids, outdir, chunk_size = chunk_size)
             protonated_id_list.extend(protonated_ids)
         elif protonated_assembly_response.status_code in [502, 504]:
             #process the chunk in smaller groups
             print(f"API Query failed error {protonated_assembly_response.status_code}, trying new chunk size {math.ceil(chunk_size/2)}")
             sub_ids = list(set(protonated_query_ids) - set(protonated_id_list))
-            protonated_ids = make_modelserver_query(list(sub_ids), chunk_size = math.ceil(chunk_size/2))
+            protonated_ids = make_modelserver_query(list(sub_ids), outdir, chunk_size = math.ceil(chunk_size/2))
             protonated_id_list.extend(protonated_ids)
         else:
             # Print an error message if the request failed

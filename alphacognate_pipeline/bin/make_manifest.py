@@ -25,7 +25,7 @@ def main():
     """
     parser = argparse.ArgumentParser(description="Get demo structures from a CSV file.")    
     parser.add_argument("structure_dir", type=str, help="Directory to search for structures in")
-    parser.add_argument("output_dir", type=str, help="directory to output manifest file to.")
+    parser.add_argument("--output_dir", default = ".", type=str, help="directory to output manifest file to.")
 
     args = parser.parse_args()
     #specify io

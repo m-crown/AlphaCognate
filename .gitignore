@@ -16,3 +16,6 @@ app/cif-files/.DS_Store
 /alphacognate_pipeline/data
 /alphacognate_pipeline/demo_out
 /alphacognate_webapp/backend/.venv
+/alphacognate_pipeline/demo_analysis
+/alphacognate_pipeline/demo_data
+/alphacognate_pipeline/foldseek

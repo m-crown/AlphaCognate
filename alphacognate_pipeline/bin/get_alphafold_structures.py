@@ -46,8 +46,8 @@ def main():
     """
     parser = argparse.ArgumentParser(description="Get demo structures from a CSV file.")    
     parser.add_argument("uniprot_ids", type=str, help="File containing list of uniprot IDs to download AF predictions for")
-    parser.add_argument("output_dir", type=str, help="Path to the output directory - where to copy procoggraph structures to")
-    parser.add_argument("complete_file_path", type = str, help = "filepath for output completion file")
+    parser.add_argument("--output_dir", type=str, default=".", help="Path to the output directory - where to copy procoggraph structures to")
+    parser.add_argument("--complete_file_path", type = str, help = "filepath for output completion file")
 
     args = parser.parse_args()
 
@@ -59,6 +59,7 @@ def main():
         for uniprot in uniprot_ids:
             find_and_download_af_prediction(uniprot, args.output_dir)
     #produce empty file to signal download complete to snakemake
-    Path(f"{args.complete_file_path}").touch()
+    if args.complete_file_path:
+        Path(f"{args.complete_file_path}").touch()
 if __name__ == "__main__":
     main()

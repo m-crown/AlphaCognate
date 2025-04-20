@@ -18,11 +18,13 @@ else:
     config["domain_match"] = ""
 
 if config.get("demo"):
-    config["demo_manifest"] = "demo_manifests/uniprot_ids.txt"
+    config["demo_structures"] = "demo_manifests/uniprot_ids.txt"
     config["demo_procoggraph_structures"] = "demo_manifests/target_pdbs.txt"
-    config["data_dir"] = "demo_data2"
-    config["procoggraph_foldseek_db"] = "demo_data2/pcgDB/pcgDB_demo"
-    config["procoggraph_foldseek_db_index"] = "demo_data2/pcgDB/pcgDB_demo_index"
+    config["data_dir"] = "demo_data"
+    config["output_dir"] = "demo_analysis"
+    config["procoggraph_foldseek_db"] = "demo_data/pcgDB/pcgDB_demo"
+    config["procoggraph_foldseek_db_index"] = "demo_data/pcgDB/pcgDB_demo_index"
+    config["procoggraph_foldseek_directory"] = "demo_data/procoggraph_assemblies"
 else:
     config["procoggraph_foldseek_db"] = "/pcgDB/pcgDB" #use the name of a full pcgdb
     config["procoggraph_foldseek_db_index"] = "/pcgDB/pcgDB_index"
@@ -140,7 +142,7 @@ rule download_procoggraph_structures:
         output_dir = config["data_dir"] + "/procoggraph_assemblies"
     shell:
         """
-        python3 bin/get_procoggraph_structures.py {input.procoggraph_manifest} {params.output_dir} && gzip {params.output_dir}/*.cif
+        python3 bin/get_procoggraph_structures.py {input.procoggraph_manifest} {params.output_dir}
         """
 
 rule format_procoggraph:
@@ -173,37 +175,17 @@ rule download_procoggraph_data:
         unzip {params.data_dir}/alphacognate_data_files.zip -d {params.data_dir}/procoggraph_data
         """
 
-#set default outdir to . for this and for get structures to alphafold
-
-# rule make_manifest:
-#     input:
-#         config["data_dir"] + "/predicted_structures_download_complete.txt"
-#     output:
-#         config["data_dir"] + "/alphafold_structures_manifest.csv"
-#     params:
-#         structure_dir = config["data_dir"] + "/predicted_structures/",
-#         output_dir = config["data_dir"]
-
-#     shell:
-#         """
-#         python3 bin/make_manifest.py {params.structure_dir} {params.output_dir}
-#         """
-
-##this one would then live solely as a preprocessing step 
-
-##do this to download demo if demo mode is enabled - add a manifest for the demo structures to demo_manifests.
-#think we can get rid of the downlaod complete file here as the check should work on expanded id output
 if config.get("demo"):
     rule download_predicted_structures:
         input:
             predicted_structure_manifest = config["demo_structures"]
         output:
-            expand(config["data_dir"] + "/predicted_structures/AF-{id}-F1-model_4.cif", id = structures),
+            expand(structure_dir + "/{id}.cif", id = structures),
             download_complete_file = config["data_dir"] + "/predicted_structures_download_complete.txt"
 
         params:
-            output_dir = config["data_dir"] + "/predicted_structures"
+            output_dir = structure_dir
         shell:
             """
-            python3 bin/get_alphafold_structures.py {input.demo_structures} {params.output_dir} {output.download_complete_file}
+            python3 bin/get_alphafold_structures.py {input.predicted_structure_manifest} --output_dir {params.output_dir} --complete_file_path {output.download_complete_file}
             """
