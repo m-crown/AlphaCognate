@@ -2,10 +2,23 @@ import pandas as pd
 import argparse
 from pathlib import Path
 import requests
+from requests.adapters import HTTPAdapter, Retry
 from gemmi import cif
 import math
 import gzip
 import os 
+
+
+# Create a session with retries
+session = requests.Session()
+retries = Retry(
+    total=3,                     # Number of total retries
+    backoff_factor=1,          # Wait time between retries: 0.5s, 1s, 2s...
+    status_forcelist=[502, 503, 504],  # Retry on these HTTP status codes
+    allowed_methods=["POST"]     # Make sure POST is included
+)
+adapter = HTTPAdapter(max_retries=retries)
+session.mount('https://', adapter)
 
 def make_modelserver_query(pdb_ids, outdir , chunk_size = 50):
     protonated_id_list = []
@@ -24,9 +37,22 @@ def make_modelserver_query(pdb_ids, outdir , chunk_size = 50):
         protonated_assembly_query_list = [{"entryId": pdb, "query": "full", "data_source":"pdb-h"} for pdb in protonated_query_ids]
         protonated_assembly_query_json = {"queries": protonated_assembly_query_list}
 
-        protonated_assembly_response = requests.post('https://www.ebi.ac.uk/pdbe/model-server/v1/query-many',
-                            json=protonated_assembly_query_json,
-                            headers={'accept': 'text/plain', 'Content-Type': 'application/json'})
+        # Make the request to the PDBe Model Server
+        max_retries = 3
+        while max_retries > 0:
+            try:
+                protonated_assembly_response = session.post('https://www.ebi.ac.uk/pdbe/model-server/v1/query-many',
+                                        json=protonated_assembly_query_json,
+                                        headers={'accept': 'text/plain', 'Content-Type': 'application/json'})
+                break
+            except requests.exceptions.RequestException as e:
+                print(f"Request failed: {e}. Retrying...")
+                max_retries -= 1
+                if max_retries == 0:
+                    print("Max retries reached. Exiting.")
+                    continue
+
+            
 
         if protonated_assembly_response.status_code == 200:
             file_object = protonated_assembly_response.text
@@ -62,7 +88,7 @@ def main():
     """
     Usage:
     
-    python3 get_structures.py uniprot_ids.txt target_pdbs.txt data
+    python3 bin/get_procoggraph_structures.py data/procoggraph_pdb_ids.txt data/procoggraph_assemblies
 
     """
     parser = argparse.ArgumentParser(description="Get demo structures from a CSV file.")    

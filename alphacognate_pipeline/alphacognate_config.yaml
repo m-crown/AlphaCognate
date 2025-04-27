@@ -1,11 +1,6 @@
 structure_dir: "data/predicted_structures"
 structure_manifest: "demo_manifests/demo_alphafold_structures_manifest.csv"
 output_dir: "demo_out2"
-procoggraph_foldseek_db: "data/pcgDB/pcgDB"
-procoggraph_foldseek_directory: "data/procoggraph_assemblies"
-procoggraph_foldseek_db_index: "data/pcgDB/pcgDB_index"
-predicted_structure_domains: "data/cath_alphafold_domains.tsv.gz"
-procoggraph_data: "data/cath_single_chain_domain_interactions.tsv.gz"
 cognate_match: true
 domain_match: true
 demo : true

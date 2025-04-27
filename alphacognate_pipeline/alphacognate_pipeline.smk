@@ -22,15 +22,21 @@ if config.get("demo"):
     config["demo_procoggraph_structures"] = "demo_manifests/target_pdbs.txt"
     config["data_dir"] = "demo_data"
     config["output_dir"] = "demo_analysis"
-    config["procoggraph_foldseek_db"] = "demo_data/pcgDB/pcgDB_demo"
-    config["procoggraph_foldseek_db_index"] = "demo_data/pcgDB/pcgDB_demo_index"
-    config["procoggraph_foldseek_directory"] = "demo_data/procoggraph_assemblies"
+    config["procoggraph_foldseek_db"] = "/pcgDB/pcgDB_demo"
+    config["procoggraph_foldseek_db_index"] = "/pcgDB/pcgDB_demo_index"
 else:
     config["procoggraph_foldseek_db"] = "/pcgDB/pcgDB" #use the name of a full pcgdb
     config["procoggraph_foldseek_db_index"] = "/pcgDB/pcgDB_index"
 
 if not config.get("data_dir"):
     config["data_dir"] = "data"
+
+if config.get("ted_domains"):
+    config["domain_profile_file"] = config["data_dir"] + "/cath_ted_domains.tsv.gz"
+    config["domain_profile_url"] = "PLACEHOLDER TED DOMAIN URL"
+else:
+    config["domain_profile_file"] = config["data_dir"] + "/cath_alphafold_domains.tsv.gz"
+    config["domain_profile_url"] = "PLACEHOLD ALPHAFOLD DOMAIN URL"
 
 if config.get("predicted_structures_manifest"):
     with open(config["predicted_structures_manifest"], "r") as f:
@@ -46,9 +52,6 @@ structures = structures_manifest.accession.tolist()
 #we need to set the sturcutre dir from here
 #maybe check that it is a single directory.
 structure_dir = structures_manifest.structure_dir.values[0]
-
-#find out if there is a way to check the content of a foldseek database - as we need to know if it is a full or partial db being checked against !!
-#if it is demo mode, set the pcg foldseek name to demo, and likewise the index.
 
 rule all:
     input: 
@@ -82,7 +85,7 @@ rule transplant_ligands:
         temp(config["output_dir"] + "/transplanted_structures/{id}_structure_summary.tsv.gz")
     params:
         output_dir = config["output_dir"] + "/transplanted_structures",
-        procoggraph_foldseek_directory = config["procoggraph_foldseek_directory"],
+        procoggraph_foldseek_directory = config["data_dir"] + "/procoggraph_assemblies",
         cognate_match = config["cognate_match"],
         domain_match_only = config["domain_match"]
     log: config["output_dir"] + "/logs/transplants/{id}_transplant.log"
@@ -93,7 +96,7 @@ rule split_foldseek:
     input:
         foldseek_file = config["output_dir"] + "/foldseek/combined_foldseek.tsv",
         structure_manifest = config["structure_manifest"],
-        predicted_structure_domains = config["predicted_structure_domains"],
+        predicted_structure_domains = config["data_dir"] + "/cath_domain_profiles_filtered.tsv.gz",
         procoggraph_data = config["data_dir"] + "/cath_single_chain_domain_interactions.tsv.gz",
     output:
         expand(config["output_dir"] + "/foldseek_split/{id}_foldseek.tsv.gz", id = structures)
@@ -106,13 +109,13 @@ rule split_foldseek:
 rule run_foldseek:
     input:
         structures = expand(structure_dir + "/{id}.cif", id = structures),
-        procoggraph_foldseek_db = config["procoggraph_foldseek_db"],
+        procoggraph_foldseek_db = config["data_dir"] + config["procoggraph_foldseek_db"],
     output:
         foldseek_file = config["output_dir"] + "/foldseek/combined_foldseek.tsv"
     threads: workflow.cores
     params: 
         structure_dir = structure_dir,
-        procoggraph_foldseek_db_index =  config["procoggraph_foldseek_db_index"]
+        procoggraph_foldseek_db_index = config["data_dir"] + config["procoggraph_foldseek_db_index"]
     log: config["output_dir"] + "/logs/report.log"
     shell:
         """foldseek easy-search {params.structure_dir} {input.procoggraph_foldseek_db} {output.foldseek_file} {params.procoggraph_foldseek_db_index} --threads {threads} --prefilter-mode 1 --format-mode 4 --format-output query,target,u,t,qlen,tlen,alnlen,mismatch,qaln,qstart,qend,taln,tstart,tend,qseq,tseq,rmsd,qheader,alntmscore,qtmscore,ttmscore,evalue,prob > {log} 2> {log}"""
@@ -121,13 +124,13 @@ rule build_foldseek_db:
     input:
         config["data_dir"] + "/procoggraph_assemblies/download_complete.txt",
     output:
-        config["procoggraph_foldseek_db"],
-        directory(config["procoggraph_foldseek_db_index"])
+        config["data_dir"] + config["procoggraph_foldseek_db"],
+        directory(config["data_dir"] + config["procoggraph_foldseek_db_index"])
     params:
         output_dir = config["data_dir"],
         input_dir = config["data_dir"] + "/procoggraph_assemblies",
-        foldseek_db = config["procoggraph_foldseek_db"],
-        foldseek_db_index = config["procoggraph_foldseek_db_index"]
+        foldseek_db = config["data_dir"] + config["procoggraph_foldseek_db"],
+        foldseek_db_index = config["data_dir"] + config["procoggraph_foldseek_db_index"]
     shell:
         "bin/build_foldseek_database.sh {params.input_dir} {params.output_dir} {params.foldseek_db} {params.foldseek_db_index}"
 
@@ -161,7 +164,30 @@ rule format_procoggraph:
         python3 bin/format_procoggraph.py --cath_domain_ownership {params.data_dir}/procoggraph_data/cath_pdb_residue_interactions.csv.gz --scores_file {params.data_dir}/procoggraph_data/all_parity_calcs.pkl --cognate_ligands {params.data_dir}/procoggraph_data/cognate_ligands_df.pkl --bound_entity_descriptors {params.data_dir}/procoggraph_data/bound_descriptors.tsv.gz --output_dir {params.data_dir}
         """
 
-rule download_procoggraph_data:
+rule filter_domain_profiles:
+    input:
+        config["domain_profile_file"]
+    output:
+        config["data_dir"] + "/cath_domain_profiles_filtered.tsv.gz"
+    params:
+        data_dir = config["data_dir"],
+        structures_manifest = config["structure_manifest"]
+    shell:
+        """
+        python3 bin/filter_domain_profiles.py --domains_file {input} --structures_manifest {params.structures_manifest} --output_dir {params.data_dir}
+        """
+
+rule download_domain_profiles:
+    output:
+        config["domain_profile_file"]
+    params:
+        domain_profile_url = config["domain_profile_url"],
+    shell:
+        """
+        wget {params.domain_profile_url} -O {output}
+        """
+
+rule download_alphacognate_data:
     output:
         config["data_dir"] + "/procoggraph_data/bound_descriptors.tsv.gz",
         config["data_dir"] + "/procoggraph_data/cognate_ligands_df.pkl",

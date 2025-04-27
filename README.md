@@ -8,7 +8,7 @@ To install AlphaCognate, clone the repository and install the required dependenc
 
 ```bash
 git clone https://github.com/m-crown/AlphaCognate.git
-cd AlphaCognate
+cd AlphaCognate/alphacognate_pipeline
 uv venv
 uv pip install -r requirements.txt
 ```
@@ -16,13 +16,15 @@ uv pip install -r requirements.txt
 In addition to the Python dependencies, AlphaCognate also requires FoldSeek for structure searching. To install FoldSeek, download the latest appropriate binary file from the [FoldSeek GitHub repo](https://github.com/steineggerlab/foldseek) (example below is shown for Linux with AVX2, binaries are available for Linux ARM64, MacOS and GPU enable - note this is not tested in AlphaCognate).
 
 ```bash
+cd AlphaCognate/alphacognate_pipeline
 source .venv/bin/activate
 wget https://mmseqs.com/foldseek/foldseek-linux-avx2.tar.gz && tar xvzf foldseek-linux-avx2.tar.gz &&  export PATH=$(pwd)/foldseek/bin/:$PATH
-``` 
+```
 
 For MacOS, the command is slightly different (note that the binary is universal and will work on both Intel and M1/M2 Macs):
 
 ```bash
+cd AlphaCognate/alphacognate_pipeline
 source .venv/bin/activate
 wget https://mmseqs.com/foldseek/foldseek-osx-universal.tar.gz && tar xvzf foldseek-osx-universal.tar.gz &&  export PATH=$(pwd)/foldseek/bin:$PATH
 ```
@@ -63,13 +65,17 @@ or
 Finally, AlphaCognate requires a domain assignments file which contains the domain boundaries predicted by CATH for the input predicted structures. This file should be a TSV file with the following columns (including a header row):
 
 - accession: The basename of the structure, e.g. AF-A0A023GPK8-F1-model_4 - this should match the structure basename in the manifest file.
-- domain_profile: The ID and residue range of the domains predicted in the structure (separated with a colon), with multiple domains semicolon delimited. For example for a structure with a single domain prediction: `2.60.40.10:122-228` and for a structure with multiple domains: `1.10.1380.10:150-448;3.40.390.10:453-765`.
+- domain_profile: The ID and residue range of the domains predicted in the structure (separated with a colon), with multiple domains semicolon delimited. For example for a structure with a single domain prediction: `2.60.40.10:122-228` and for a structure with multiple domains: `1.10.1380.10:150-448;3.40.390.10:453-765`. Where domains are segmented, multiple ranges are separated with an underscore e.g. `1.10.1380.10:150-448_502-765`.
 
-This file can be provided by the user or generated from CATH domain assignments from either CATH AlphaFold 2021 or The Encyclopedia of Domains (TED) using the following helper command:
+This file can be provided by the user or generated from CATH domain assignments from either [CATH AlphaFold Model Organisms analysis (2021)](https://zenodo.org/records/7404988) or The Encyclopedia of Domains (TED) using the following helper command:
 
 ```bash
-
+cd AlphaCognate/alphacognate_pipeline
+source .venv/bin/activate
+python3 bin/format_cath_af_domains.py --ted
 ```
+
+The output directory of this file can be specified using the `--output_dir` flag.
 
 ## Running The AlphaCognate Pipeline
 
@@ -77,18 +83,18 @@ To run AlphaCognate, the pipeline is executed with Snakemake. The workflow is de
 
 For the TL;DR version, the following command will run the pipeline with default parameters:
 
-```bash 
+```bash  
 snakemake -s alphacognate_pipeline.smk --configfile alphacognate_config.yaml --cores 1
 ```
 
-AlphaCognate runtime benefits significantly from increased thread count, which helps speed-up both FoldSeek and allow for parallel transplantations. STATEMENT HERE ON RUNTIME WITH X AND Y THREADS. 
+AlphaCognate runtime benefits significantly from increased thread count, which helps speed-up both FoldSeek and allow for parallel transplantations. STATEMENT HERE ON RUNTIME WITH X AND Y THREADS.
 
 Note: Files from the ProCogGraph database (see [here](https://pathtopcgpaper.com)) are required for running AlphaCognate. These are downloaded in a preprocessing step of the pipeline, download size:
 
-- XXX zipped
-- YYY unzipped
+- 137MB zipped
+- 693MB unzipped
 
-Additionally, the pipeline requires the download of the protonated assemblies of structures present in the ProCogGraph mapping. For the demo output, a subset of 45 structures are downloaded, but to run the full pipeline against all structures present in the ProCogGraph mapping, approx. 60,000 structures are required. The download size of these files is approx. XXXX.
+Additionally, the pipeline requires the download of the protonated assemblies of structures present in the ProCogGraph mapping. For the demo output, a subset of 45 structures are downloaded (total download size approx. 15MB), but to run the full pipeline against all structures present in the ProCogGraph mapping, approx. 60,000 structures are required. The download size of these files is approx. 15GB.
 
 ### Configuration
 
@@ -101,3 +107,11 @@ The pipeline is configured using a YAML file, which can be specified using the `
   - `domain_name`: The name of the domain, e.g. "Ligand-binding domain"
   - `ligand_id`: The ID of the cognate ligand, e.g. "ATP"
   - `ligand_name`: The name of the cognate ligand, e.g. "Adenosine triphosphate"
+
+The domain assignments files are pre-generated using the CATH domain assignments from either [CATH AlphaFold Model Organisms analysis (2021)]() or The Encyclopedia of Domains (TED) using the following helper command:
+
+```bash
+
+```
+
+### Structure of the ProCogGraph Mapping File

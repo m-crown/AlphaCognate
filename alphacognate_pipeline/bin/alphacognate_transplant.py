@@ -194,42 +194,41 @@ def determine_tcs(query_struct, transplant_chain_id):
     ##we should also consider providing a method to return a list of clashing atoms like alphafill does in the json
     return tcs
 
-import bisect
-def check_domain_profile(af_domain_profiles, residues_in_contact = 0, procoggraph_profile = 0):
-    """
-    function takes as input a domain profile in list format,
-    structure domain:range, and a list of residues that are 
-    in contact with a ligand. finally , it takes as input
-    a coglig profile. assign a domain to each residue contact
-    or none if there are none, and then check that the basic 
-    profile of contacts matches pcg mapping.
-    """
+def check_domain_profile(af_domain_profiles, residues_in_contact=0, procoggraph_profile=0):
     domain_range_dict = {}
-    domain_starts = []
+    
     for i, domain_profile in enumerate(af_domain_profiles):
-        domain,res = domain_profile.split(":")
-        res_start, res_end = res.split("-")
-        domain_range_dict[i] = {"domain": f"{domain}_{i}" , "start" : int(res_start), "end": int(res_end)}
-        domain_starts.append((int(res_start), i))
-    domain_starts.sort() #verify the starts are sorted in correct order low to high.
-    domain_starts_list = [start for start,idx in domain_starts]
-    residue_mappings = {domain_range_dict[idx]['domain']: [] for idx in domain_range_dict}
-    residue_mappings.setdefault('no-domain_-1', [])
-    for res in residues_in_contact:
-        idx = bisect.bisect_right(domain_starts_list, res) - 1
-        if idx >= 0 and domain_range_dict[idx]["start"] <= res <= domain_range_dict[idx]["end"]:
-            domain = domain_range_dict[idx]['domain']
-            residue_mappings[domain].append(res)
-        else:
-            residue_mappings['no-domain_-1'].append(res)
-            
-    interacting_domains = [(key.split("_")[0],key.split("_")[1], len(value)) for key,value in residue_mappings.items() if len(value) > 0 and key != "no-domain_-1"]
-    procoggraph_map = sorted([domain for domain, idx, count in interacting_domains]) == sorted(procoggraph_profile)
-    #format the lists and dictionaries into a flat output to join with dataframe, domains semicolon delimited, information on domains colon delimited
-    interacting_domains = ";".join([":".join([str(val) for val in tup]) for tup in interacting_domains])
-    residue_mappings = ";".join([":".join([key, ",".join([str(res) for res in value])]) for key, value in residue_mappings.items() if value])
-    return residue_mappings, interacting_domains, procoggraph_map
+        domain, res = domain_profile.split(":")
+        segments = res.split("_")
+        ranges = []
+        for segment in segments:
+            res_start, res_end = segment.split("-")
+            ranges.append((int(res_start), int(res_end)))
+        domain_range_dict[f"{domain}_{i}"] = ranges
 
+    residue_mappings = {domain: [] for domain in domain_range_dict}
+    residue_mappings.setdefault('no-domain_-1', [])
+    
+    for res in residues_in_contact:
+        found = False
+        for domain, ranges in domain_range_dict.items():
+            for start, end in ranges:
+                if start <= res <= end:
+                    residue_mappings[domain].append(res)
+                    found = True
+                    break
+            if found:
+                break
+        if not found:
+            residue_mappings['no-domain_-1'].append(res)
+    
+    interacting_domains = [(domain.split("_")[0], domain.split("_")[1], len(residues)) for domain, residues in residue_mappings.items() if residues and domain != 'no-domain_-1']
+    procoggraph_map = sorted([domain for domain, idx, count in interacting_domains]) == sorted(procoggraph_profile)
+    
+    interacting_domains = ";".join([":".join([str(val) for val in tup]) for tup in interacting_domains])
+    residue_mappings = ";".join([":".join([key, ",".join(map(str, value))]) for key, value in residue_mappings.items() if value])
+    
+    return residue_mappings, interacting_domains, procoggraph_map
 
 def main():
     """This script takes an input foldseek alignment file and transplants cognate ligands from the aligned structures to an AlphaFold model. 
