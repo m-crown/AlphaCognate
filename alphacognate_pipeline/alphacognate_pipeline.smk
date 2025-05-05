@@ -1,6 +1,21 @@
 import pandas as pd
 
 #process config options
+if config.get("demo"):
+    config["demo_structures"] = "demo_manifests/demo_predicted_structures.txt"
+    config["demo_procoggraph_structures"] = "demo_manifests/demo_procoggraph_assemblies.txt"
+    config["structure_manifest"] = "demo_manifests/demo_alphafold_structures_manifest.csv"
+    config["data_dir"] = "demo_data"
+    config["output_dir"] = "demo_analysis"
+    config["procoggraph_foldseek_db"] = "/pcgDB/pcgDB_demo"
+    config["procoggraph_foldseek_db_index"] = "/pcgDB/pcgDB_demo_index"
+    config["domain_match"] = True
+    config["cognate_match"] = True
+    config["domains"] = "cath-alphafold"
+else:
+    config["procoggraph_foldseek_db"] = "/pcgDB/pcgDB" #use the name of a full pcgdb
+    config["procoggraph_foldseek_db_index"] = "/pcgDB/pcgDB_index"
+
 if "cognate_match" in config:
     if config["cognate_match"] == True:
         config["cognate_match"] = "--cognate_match"
@@ -17,26 +32,17 @@ if "domain_match" in config:
 else:
     config["domain_match"] = ""
 
-if config.get("demo"):
-    config["demo_structures"] = "demo_manifests/uniprot_ids.txt"
-    config["demo_procoggraph_structures"] = "demo_manifests/target_pdbs.txt"
-    config["data_dir"] = "demo_data"
-    config["output_dir"] = "demo_analysis"
-    config["procoggraph_foldseek_db"] = "/pcgDB/pcgDB_demo"
-    config["procoggraph_foldseek_db_index"] = "/pcgDB/pcgDB_demo_index"
-else:
-    config["procoggraph_foldseek_db"] = "/pcgDB/pcgDB" #use the name of a full pcgdb
-    config["procoggraph_foldseek_db_index"] = "/pcgDB/pcgDB_index"
-
 if not config.get("data_dir"):
     config["data_dir"] = "data"
 
-if config.get("ted_domains"):
+if "domains" in config and config.get("domains").lower() == "ted":
     config["domain_profile_file"] = config["data_dir"] + "/cath_ted_domains.tsv.gz"
     config["domain_profile_url"] = "PLACEHOLDER TED DOMAIN URL"
-else:
+elif (not "domains" in config) or ("domains" in config and config.get("domains").lower() == "cath-alphafold"):
     config["domain_profile_file"] = config["data_dir"] + "/cath_alphafold_domains.tsv.gz"
     config["domain_profile_url"] = "PLACEHOLD ALPHAFOLD DOMAIN URL"
+else:
+    raise ValueError("Invalid value for 'domains' in config. Expected 'ted' or 'cath-alphafold'.")
 
 if config.get("predicted_structures_manifest"):
     with open(config["predicted_structures_manifest"], "r") as f:
@@ -96,7 +102,7 @@ rule split_foldseek:
     input:
         foldseek_file = config["output_dir"] + "/foldseek/combined_foldseek.tsv",
         structure_manifest = config["structure_manifest"],
-        predicted_structure_domains = config["data_dir"] + "/cath_domain_profiles_filtered.tsv.gz",
+        predicted_structure_domains = config["output_dir"] + "/cath_domain_profiles_filtered.tsv.gz",
         procoggraph_data = config["data_dir"] + "/cath_single_chain_domain_interactions.tsv.gz",
     output:
         expand(config["output_dir"] + "/foldseek_split/{id}_foldseek.tsv.gz", id = structures)
@@ -168,13 +174,13 @@ rule filter_domain_profiles:
     input:
         config["domain_profile_file"]
     output:
-        config["data_dir"] + "/cath_domain_profiles_filtered.tsv.gz"
+        config["output_dir"] + "/cath_domain_profiles_filtered.tsv.gz"
     params:
-        data_dir = config["data_dir"],
+        output_dir = config["output_dir"],
         structures_manifest = config["structure_manifest"]
     shell:
         """
-        python3 bin/filter_domain_profiles.py --domains_file {input} --structures_manifest {params.structures_manifest} --output_dir {params.data_dir}
+        python3 bin/filter_domain_profiles.py --domains_file {input} --structures_manifest {params.structures_manifest} --output_dir {params.output_dir}
         """
 
 rule download_domain_profiles:

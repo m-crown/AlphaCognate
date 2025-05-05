@@ -1,6 +1,0 @@
-structure_dir: "demo_data/predicted_structures"
-structure_manifest: "demo_manifests/demo_alphafold_structures_manifest.csv"
-output_dir: "demo_out2"
-cognate_match: true
-domain_match: true
-demo : true

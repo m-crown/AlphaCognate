@@ -196,6 +196,8 @@ def determine_tcs(query_struct, transplant_chain_id):
 
 def check_domain_profile(af_domain_profiles, residues_in_contact=0, procoggraph_profile=0):
     domain_range_dict = {}
+    if af_domain_profiles == ['']: #sometimes the uniprot id does not have a domain mapping in ted or cath alphafold
+        return "", "", False
     
     for i, domain_profile in enumerate(af_domain_profiles):
         domain, res = domain_profile.split(":")

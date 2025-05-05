@@ -67,15 +67,16 @@ Finally, AlphaCognate requires a domain assignments file which contains the doma
 - accession: The basename of the structure, e.g. AF-A0A023GPK8-F1-model_4 - this should match the structure basename in the manifest file.
 - domain_profile: The ID and residue range of the domains predicted in the structure (separated with a colon), with multiple domains semicolon delimited. For example for a structure with a single domain prediction: `2.60.40.10:122-228` and for a structure with multiple domains: `1.10.1380.10:150-448;3.40.390.10:453-765`. Where domains are segmented, multiple ranges are separated with an underscore e.g. `1.10.1380.10:150-448_502-765`.
 
-This file can be provided by the user or generated from CATH domain assignments from either [CATH AlphaFold Model Organisms analysis (2021)](https://zenodo.org/records/7404988) or The Encyclopedia of Domains (TED) using the following helper command:
+The domain assignments files are pre-generated using the CATH domain assignments from either [AlphaFold2 reveals commonalities and novelties in protein structure space for 21 model organisms](https://www.nature.com/articles/s42003-023-04488-9) or [Exploring structural diversity across the protein universe with The Encyclopedia of Domains](https://www.science.org/doi/10.1126/science.adq4946) using the following helper command:
 
 ```bash
-cd AlphaCognate/alphacognate_pipeline
+cd alphacognate_pipeline
 source .venv/bin/activate
+python3 bin/format_cath_af_domains.py
 python3 bin/format_cath_af_domains.py --ted
 ```
 
-The output directory of this file can be specified using the `--output_dir` flag.
+These files are uploaded to Zenodo and are downloaded within the pipeline depending on the config parameter set - set `domains` to `ted` in `config.yaml` to use the TED domains, and do not set `domains` or set to `cath-alphafold` to use the CATH-AlphaFold formatted domains.
 
 ## Running The AlphaCognate Pipeline
 
@@ -87,9 +88,17 @@ For the TL;DR version, the following command will run the pipeline with default 
 snakemake -s alphacognate_pipeline.smk --configfile alphacognate_config.yaml --cores 1
 ```
 
+A demo analysis can be performed to examine the outputs of AlphaCognate using the following command:
+
+```bash  
+snakemake -s alphacognate_pipeline.smk --config demo=demo
+```
+
+Which runs five predicted structures from AlphaFold against a small subset of experimental assemblies with cognate ligand mappings in ProCogGraph.
+
 AlphaCognate runtime benefits significantly from increased thread count, which helps speed-up both FoldSeek and allow for parallel transplantations. STATEMENT HERE ON RUNTIME WITH X AND Y THREADS.
 
-Note: Files from the ProCogGraph database (see [here](https://pathtopcgpaper.com)) are required for running AlphaCognate. These are downloaded in a preprocessing step of the pipeline, download size:
+Note: Files from the ProCogGraph database (see [here](https://doi.org/10.1093/bioadv/vbae161)) are required for running AlphaCognate. These are downloaded in a preprocessing step of the pipeline, download size:
 
 - 137MB zipped
 - 693MB unzipped
@@ -100,18 +109,8 @@ Additionally, the pipeline requires the download of the protonated assemblies of
 
 The pipeline is configured using a YAML file, which can be specified using the `--configfile` option. The configuration file should contain the following parameters:
 
-- `manifest`: The path to the manifest file containing the structure basenames, filenames, and directories.
-- `domain_assignments`: The path to the domain assignments file, which should be a CSV file with the following columns:
-  - `structure_basename`: The basename of the structure, e.g. AF-A0A023GPK8-F1-model_4
-  - `domain_id`: The ID of the domain, e.g. A0A023GPK8
-  - `domain_name`: The name of the domain, e.g. "Ligand-binding domain"
-  - `ligand_id`: The ID of the cognate ligand, e.g. "ATP"
-  - `ligand_name`: The name of the cognate ligand, e.g. "Adenosine triphosphate"
-
-The domain assignments files are pre-generated using the CATH domain assignments from either [CATH AlphaFold Model Organisms analysis (2021)]() or The Encyclopedia of Domains (TED) using the following helper command:
-
-```bash
-
-```
-
-### Structure of the ProCogGraph Mapping File
+- `structure_manifest`: The path to the manifest file containing the structure basenames, filenames, and directories.
+- `output_dir`: The directory to store analysis output in.
+- `cognate_match`: true/false, when set to true only ligands with a cognate mapping in ProCogGraph will be transplanted.
+- `domain_match`: true/false, when set to true only transplants with a matching domain interaction profile to the experimentally observed ligand interaction will be retained.
+- `domains`: either "cath-alphafold" or "ted". This flag alters the pre-formatted predicted structure domain profiles which are used for analysis of domain-ligand interactions. See [pre-requisites](#pre-requisites).

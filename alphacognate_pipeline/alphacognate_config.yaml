@@ -1,6 +1,5 @@
-structure_dir: "data/predicted_structures"
-structure_manifest: "demo_manifests/demo_alphafold_structures_manifest.csv"
-output_dir: "demo_out2"
+structure_manifest: "/PATH/TO/STRUCTURE/MANIFEST"
+output_dir: "OUTPUT_DIR"
 cognate_match: true
 domain_match: true
-demo : true
+domains: "cath-alphafold"

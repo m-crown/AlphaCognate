@@ -24,7 +24,7 @@ def main():
     keep_accessions = set(accessions_file.accession.unique())
 
     chunk_size = 100_000
-
+    filtered_accessions = []
     with gzip.open(f"{args.output_dir}/cath_domain_profiles_filtered.tsv.gz", "wt") as f_out: 
         header_written = False
         # write a comment manually
@@ -37,6 +37,12 @@ def main():
                 header_written = True
             else:
                 filtered_chunk.to_csv(f_out, sep="\t", index=False, header=False)
+            filtered_accessions.extend(filtered_chunk["accession"].unique())
+    print(f"Filtered {len(filtered_accessions)} accessions from {args.domains_file} to {args.output_dir}/cath_domain_profiles_filtered.tsv.gz")
+    with open(f"{args.output_dir}/cath_domain_profiles_filtered_structures_list.tsv", "w") as f_out:
+        f_out.write("accession")
+        for accession in filtered_accessions:
+            f_out.write(f"{accession}\n")
 
 if __name__ == "__main__":
     main()
