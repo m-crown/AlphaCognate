@@ -37,10 +37,10 @@ if not config.get("data_dir"):
 
 if "domains" in config and config.get("domains").lower() == "ted":
     config["domain_profile_file"] = config["data_dir"] + "/cath_ted_domains.tsv.gz"
-    config["domain_profile_url"] = "PLACEHOLDER TED DOMAIN URL"
+    config["domain_profile_url"] = "https://zenodo.org/records/15331677/files/cath_alphafold_domains.tsv.gz?download=1"
 elif (not "domains" in config) or ("domains" in config and config.get("domains").lower() == "cath-alphafold"):
     config["domain_profile_file"] = config["data_dir"] + "/cath_alphafold_domains.tsv.gz"
-    config["domain_profile_url"] = "PLACEHOLD ALPHAFOLD DOMAIN URL"
+    config["domain_profile_url"] = "https://zenodo.org/records/15331677/files/cath_alphafold_domains.tsv.gz?download=1"
 else:
     raise ValueError("Invalid value for 'domains' in config. Expected 'ted' or 'cath-alphafold'.")
 
