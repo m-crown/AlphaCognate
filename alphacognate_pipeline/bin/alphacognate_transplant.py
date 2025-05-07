@@ -116,7 +116,8 @@ def contact_search_target(target_struct, target_chain, reslist, contact_search_d
                         if not atom.is_hydrogen():
                             ns.add_atom(atom, n_ch, n_res, n_atom)
     if len(matched_res) != len(reslist):
-        #observe issue with ac1 and glc in 3poc where two residues have same seqid - need to check this in the future
+        #observe issue with ac1 and glc in 3poc where two residues have same seqid - need to check this in the future also 1b5q
+        print(f"{target_struct}, {target_chain}, {reslist}, {matched_res}")
         print("Failed to match all ligand residues, check chain mappings!")
         return None, None
     
@@ -134,6 +135,9 @@ def contact_search_target(target_struct, target_chain, reslist, contact_search_d
     #now need to get the index position of the list of ca pos in the mol1 stucture
     mol_range_index_positions = [i for i, e in enumerate(target_alignment_range) if e in ca_pos]
     if len(mol_range_index_positions) < 3:
+        #Require a minimum of 3 residues in contact for a valid match - should extend the error message here to be more informative.
+        #print(f"Not enough residues in contact with the ligand, only {len(mol_range_index_positions)} residues found.")
+        #make this a log thing in future
         return None, None
     
     local_rmsd_atoms_mol1 = itemgetter(*mol_range_index_positions)(query_alignment_range)
@@ -257,26 +261,32 @@ def main():
         return
 
     #merge procoggraph data and foldseek data. then we do a foldseek itterrows but we should loop over the structures, where there could be multiple ligands to transplant in the same structure.
+    error = None
+
     foldseek_file = pd.read_csv(args.foldseek_file, sep="\t", na_values = ["NaN", "None"], keep_default_na = False)
-    
-    if args.cognate_match:
-        foldseek_file = foldseek_file[(foldseek_file["cognate_mapping_id"].isna() == False) & (foldseek_file.cognate_mapping_id != "")]
+    if "error" in foldseek_file.columns:
+        error = foldseek_file.error.values[0]
 
     foldseek_file["fp"] = foldseek_file["structure_dir"] + "/" + foldseek_file["file_name"]
     
-    #load the af structure to which ligands will be transplanted
     predicted_structure_id = foldseek_file["accession"].values[0]
     predicted_structure_file = foldseek_file["fp"].values[0]
 
+    if args.cognate_match and not error:
+        foldseek_file = foldseek_file[(foldseek_file["cognate_mapping_id"].isna() == False) & (foldseek_file.cognate_mapping_id != "")]
+        if len(foldseek_file) == 0:
+            error = "No cognate ligands found in foldseek file."
+
+    #load the af structure to which ligands will be transplanted
     af_structure = cif.read(predicted_structure_file)
     query_block = af_structure.sole_block()
 
-    if "error" in foldseek_file.columns: ##eventually want to make this more robust - all foldseek file columns should be the same, the test would become if all the values in foldseek file .error are not na perhaps.
+    if error: ##eventually want to make this more robust - all foldseek file columns should be the same, the test would become if all the values in foldseek file .error are not na perhaps.
 
         #set the structure error which is the foldseek file error.
         alphacognate_structure = AlphaCognateStructure(
             accession = predicted_structure_id,
-            error = foldseek_file.error.values[0],
+            error = error,
             runtime = 0,
             num_transplants = 0
             )

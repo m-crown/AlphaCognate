@@ -17,7 +17,7 @@ def find_cif_files_in_directory(directory, output_csv):
                     basename = os.path.splitext(os.path.basename(filename))[0]
                     
                     #write required columns to file - basename, full filename, and directory
-                    writer.writerow([basename, filename, root])
+                    writer.writerow([basename, filename, root.strip("/")])
 
 def main():
     """

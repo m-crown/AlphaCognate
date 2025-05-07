@@ -37,7 +37,7 @@ if not config.get("data_dir"):
 
 if "domains" in config and config.get("domains").lower() == "ted":
     config["domain_profile_file"] = config["data_dir"] + "/cath_ted_domains.tsv.gz"
-    config["domain_profile_url"] = "https://zenodo.org/records/15331677/files/cath_alphafold_domains.tsv.gz?download=1"
+    config["domain_profile_url"] = "https://zenodo.org/records/15331677/files/cath_ted_domains.tsv.gz?download=1"
 elif (not "domains" in config) or ("domains" in config and config.get("domains").lower() == "cath-alphafold"):
     config["domain_profile_file"] = config["data_dir"] + "/cath_alphafold_domains.tsv.gz"
     config["domain_profile_url"] = "https://zenodo.org/records/15331677/files/cath_alphafold_domains.tsv.gz?download=1"
@@ -190,7 +190,7 @@ rule download_domain_profiles:
         domain_profile_url = config["domain_profile_url"],
     shell:
         """
-        wget {params.domain_profile_url} -O {output}
+        curl -L {params.domain_profile_url} -o {output}
         """
 
 rule download_alphacognate_data:
@@ -203,7 +203,7 @@ rule download_alphacognate_data:
         data_dir = config["data_dir"]
     shell:
         """
-        wget https://zenodo.org/records/15204472/files/alphacognate_data_files.zip?download=1 -O {params.data_dir}/alphacognate_data_files.zip
+        curl -L "https://zenodo.org/records/15204472/files/alphacognate_data_files.zip?download=1" -o {params.data_dir}/alphacognate_data_files.zip
         unzip {params.data_dir}/alphacognate_data_files.zip -d {params.data_dir}/procoggraph_data
         """
 
