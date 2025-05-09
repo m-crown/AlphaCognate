@@ -425,7 +425,7 @@ def main():
                 global_rmsd = global_rmsd,
                 local_rmsd = local_rmsd,
                 ligand = row.ligand,
-                ligand_het_code = row.ligand_het_code,
+                ligand_het_code = str(row.ligand_het_code),
                 ligand_name = row.ligand_name,
                 ligand_smiles = row.ligand_smiles,
                 interaction =  row.combined_interaction,
