@@ -24,9 +24,8 @@ def main():
     # Load the structure with gemmi
     af_structure = gemmi.cif.read(args.structure)
     query_block = af_structure.sole_block()
-
     # Process the data (assuming a loop exists with cluster info)
-    structure_transplants = pd.DataFrame(query_block.get_mmcif_category("_alphacognate"))
+    structure_transplants = pd.DataFrame(query_block.get_mmcif_category("_alphacognate_transplants."))
     structure_transplants = structure_transplants.replace("", np.nan)
     structure_transplants[["cluster", "tcs"]] = structure_transplants[["cluster", "tcs"]].astype("float")
 
@@ -43,7 +42,7 @@ def main():
     
 
     # Assign colors to clusters and apply to chains
-    chain_cluster_dict = {row['chain']: row['cluster'] for index, row in structure_transplants.iterrows()}
+    chain_cluster_dict = {row['ligand_chain']: row['cluster'] for index, row in structure_transplants.iterrows()}
 
     # Load the structure into PyMOL
     cmd.load(args.structure)
@@ -55,4 +54,8 @@ def main():
         cmd.color(f'cluster_{int(cluster)}_color', f'chain {chain}')  # Apply color to chain
 
     # Save the PyMOL session
+    print("saving session")
     cmd.save(args.output_file)  # Save the PyMOL session as a .pse file
+
+if __name__ == "__main__":
+    main()
