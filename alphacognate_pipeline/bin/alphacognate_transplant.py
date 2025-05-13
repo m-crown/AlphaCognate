@@ -9,7 +9,6 @@ import time
 import itertools
 import string
 import numpy as np
-from sklearn.cluster import HDBSCAN
 from typing import Optional, List
 from pydantic import BaseModel
 
@@ -45,6 +44,7 @@ class AlphaCognateStructure(BaseModel):
     accession: str
     runtime: Optional[float] = None
     num_transplants: Optional[int] = None
+    num_clusters: Optional[int] = None
     error: Optional[str] = None
 
 def get_alignment_positions(foldseek_result, query_struct, query_chain, target_struct, target_chain):
@@ -448,6 +448,7 @@ def main():
             #calculate cluster membership with default hdbscan parameters for transplants
             if not (transplants_df["ligand_center_of_mass"] == "").all(): #again, is this necessary?
                 #this replacement is necessary because we set center of mass as string in transplant model. sometimes gemmi returns np.nan as the center of mass - investigate this.
+                #TODO : This has multiple records for same com due to cognate ligand mappings. should remove and merge.
                 transplants_df["center_of_mass_split"] = transplants_df["ligand_center_of_mass"].replace("", np.nan).str.split(",")
                 points = transplants_df.loc[(transplants_df.center_of_mass_split.isna() == False), "center_of_mass_split"].apply(lambda x: [float(y) for y in x]).values
                 if len(points) < 5:
@@ -455,16 +456,39 @@ def main():
                 else:
                     #discuss this in a disccusion section.
                     points = np.array([np.array(point) for point in points])
-                    params = {"min_cluster_size": 5, "min_samples": 5} #specifying the default values here for future configuration by user
-                    hdb = HDBSCAN(**params).fit(points)
+                    
+                    clustering_method = "agglomerative" #default clustering method - for now not configurable.
+                    if clustering_method == "agglomerative":
+                        #use agglomerative clustering to cluster the points
+                        from sklearn.cluster import AgglomerativeClustering
+                        clustering = AgglomerativeClustering(n_clusters=None, distance_threshold=10, linkage = "average").fit(points)
+                    elif clustering_method == "hdbscan":
+                        #use hdbscan to cluster the points
+                        from sklearn.cluster import HDBSCAN
+                        if len(points) < 5:
+                            labels = [-1] * len(points)
+                        else:
+                            params = {"min_cluster_size": 5, "min_samples": 5} #specifying the default values here for future configuration by user
+                            clustering = HDBSCAN(**params).fit(points)
 
                     #add cluster labels to the dataframe - clusters with fewer than 5 members will be labelled as noise and given -1 as a cluster value.
-                    labels = hdb.labels_
+                    labels = clustering.labels_
                     transplants_df.loc[(transplants_df.center_of_mass_split.isna() == False), "cluster"] = labels
                     transplants_df.loc[(transplants_df.center_of_mass_split.isna()), "cluster"] = -1
             else:
                 transplants_df["cluster"] = 0
-        
+            
+            #use the assigned cluster labels to generate a cluster center for each cluster.
+
+            cluster_centers = transplants_df[["ligand_chain", "center_of_mass_split", "cluster"]].drop_duplicates(subset = "ligand_chain")
+            cluster_centers["center_of_mass_split"] = cluster_centers["center_of_mass_split"].apply(lambda x: [float(y) for y in x])
+            cluster_centers = (cluster_centers.groupby('cluster')['center_of_mass_split']
+                .apply(lambda coords: np.mean(np.vstack(coords), axis=0))
+                .reset_index(name='cluster_center')
+            )
+            #merge the cluster centers to the df
+            transplants_df = transplants_df.merge(cluster_centers, on = "cluster", how = "left")
+            transplants_df["cluster_center"] = transplants_df["cluster_center"].apply(lambda x: ",".join([str(y) for y in x]))
             #remove the split center of mass split column and the num transpalnts from the mmcif - it is implicit in the number of rows.
             transplants_df = transplants_df.drop(columns = ["center_of_mass_split"])
             #save to file incl. all cognate mapping
@@ -493,12 +517,19 @@ def main():
             query_block.set_mmcif_category("_alphacognate_cognate_mapping", cognate_mapping_dict)
             
             #we have added new entities. Need to make sure theyre present in the _entity. loop.
+            query_struct.assign_subchains(force = True)
             query_struct.ensure_entities()
-
             #update the query block with the new structure.
             query_struct.update_mmcif_block(query_block)
             
+            #manually revert original chain struct asym to A.
+            struct_asym = pd.DataFrame(query_block.get_mmcif_category('_struct_asym.'))
+            struct_asym.loc[struct_asym['entity_id'] == "1", 'id'] = 'A'
+            atom_site = pd.DataFrame(query_block.get_mmcif_category('_atom_site.'))
+            atom_site.loc[atom_site['label_entity_id'] == '1', 'label_asym_id'] = 'A'
             #update loops that get lost or modified in processing.
+            query_block.set_mmcif_category("_atom_site.", atom_site.to_dict(orient = "list"))
+            query_block.set_mmcif_category("_struct_asym.", struct_asym.to_dict(orient = "list"))
             query_block.set_mmcif_category("_struct_conf.", struct_conf)
             query_block.set_mmcif_category("_struct_conf_type.", struct_conf_type)
             chem_comp = chem_comp.replace(False, "?")
@@ -512,7 +543,8 @@ def main():
         alphacognate_structure = AlphaCognateStructure(
             accession = predicted_structure_id,
             runtime = time.time() - start_time,
-            num_transplants = len(transplants)
+            num_transplants = len(transplants),
+            num_clusters = transplants_df["cluster"].nunique()
         )
 
         #tables need to be keys with lists
