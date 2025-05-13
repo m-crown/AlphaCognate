@@ -476,15 +476,16 @@ def main():
                     transplants_df.loc[(transplants_df.center_of_mass_split.isna() == False), "cluster"] = labels
                     transplants_df.loc[(transplants_df.center_of_mass_split.isna()), "cluster"] = -1
                     #use the assigned cluster labels to generate a cluster center for each cluster.
-                    cluster_centers = transplants_df[["ligand_chain", "center_of_mass_split", "cluster"]].drop_duplicates(subset = "ligand_chain")
+                    cluster_centers = transplants_df.loc[(transplants_df.center_of_mass_split.isna() == False)].drop_duplicates(subset = "ligand_chain")
                     cluster_centers["center_of_mass_split"] = cluster_centers["center_of_mass_split"].apply(lambda x: [float(y) for y in x])
                     cluster_centers = (cluster_centers.groupby('cluster')['center_of_mass_split']
                         .apply(lambda coords: np.mean(np.vstack(coords), axis=0))
                         .reset_index(name='cluster_center')
                     )
                     #merge the cluster centers to the df
-                    transplants_df = transplants_df.merge(cluster_centers, on = "cluster", how = "left")
-                    transplants_df["cluster_center"] = transplants_df["cluster_center"].apply(lambda x: ",".join([str(y) for y in x]))
+                    transplants_df.loc[(transplants_df.center_of_mass_split.isna() == False)] = transplants_df.loc[(transplants_df.center_of_mass_split.isna() == False)].merge(cluster_centers, on = "cluster", how = "left")
+                    transplants_df.loc[(transplants_df.center_of_mass_split.isna()), "cluster_center"] = ""
+                    transplants_df.loc[(transplants_df.center_of_mass_split.isna()) == False, "cluster_center"].apply(lambda x: ",".join([str(y) for y in x]))
             else:
                 transplants_df["cluster"] = 0
                 transplants_df["cluster_center"] = ""
