@@ -453,6 +453,7 @@ def main():
                 points = transplants_df.loc[(transplants_df.center_of_mass_split.isna() == False), "center_of_mass_split"].apply(lambda x: [float(y) for y in x]).values
                 if len(points) < 5:
                     transplants_df.loc[(transplants_df.center_of_mass_split.isna() == False), "cluster"] = -1
+                    transplants_df.loc[(transplants_df.center_of_mass_split.isna() == False), "cluster_center"] = ""
                 else:
                     #discuss this in a disccusion section.
                     points = np.array([np.array(point) for point in points])
@@ -484,8 +485,8 @@ def main():
                     )
                     #merge the cluster centers to the df
                     transplants_df.loc[(transplants_df.center_of_mass_split.isna() == False)] = transplants_df.loc[(transplants_df.center_of_mass_split.isna() == False)].merge(cluster_centers, on = "cluster", how = "left")
-                    transplants_df.loc[(transplants_df.center_of_mass_split.isna()), "cluster_center"] = ""
-                    transplants_df.loc[(transplants_df.center_of_mass_split.isna()) == False, "cluster_center"].apply(lambda x: ",".join([str(y) for y in x]))
+                    transplants_df.loc[(transplants_df.cluster_center.isna()), "cluster_center"] = ""
+                    transplants_df.loc[(transplants_df.cluster_center.isna()) == False, "cluster_center"].apply(lambda x: ",".join([str(y) for y in x]))
             else:
                 transplants_df["cluster"] = 0
                 transplants_df["cluster_center"] = ""
