@@ -539,7 +539,7 @@ def main():
         else:
             # Create an empty file with no transplants (predominantly because snakemake is expecting it)
             Path(f"{args.outdir}/{predicted_structure_id}_transplants.tsv.gz").touch()
-        if transplants_df is not None:
+        if len(transplants) > 0:
             num_clusters = transplants_df["cluster"].nunique()
         else:
             num_clusters = 0
