@@ -539,12 +539,15 @@ def main():
         else:
             # Create an empty file with no transplants (predominantly because snakemake is expecting it)
             Path(f"{args.outdir}/{predicted_structure_id}_transplants.tsv.gz").touch()
-        
+        if transplants_df is not None:
+            num_clusters = transplants_df["cluster"].nunique()
+        else:
+            num_clusters = 0
         alphacognate_structure = AlphaCognateStructure(
             accession = predicted_structure_id,
             runtime = time.time() - start_time,
             num_transplants = len(transplants),
-            num_clusters = transplants_df["cluster"].nunique()
+            num_clusters = num_clusters
         )
 
         #tables need to be keys with lists
