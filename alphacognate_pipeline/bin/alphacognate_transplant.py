@@ -486,7 +486,7 @@ def main():
                     #merge the cluster centers to the df
                     transplants_df = transplants_df.merge(cluster_centers, on = "cluster", how = "left")
                     transplants_df.loc[(transplants_df.cluster_center.isna()), "cluster_center"] = ""
-                    transplants_df.loc[(transplants_df.cluster_center.isna()) == False, "cluster_center"].apply(lambda x: ",".join([str(y) for y in x]))
+                    transplants_df.loc[(transplants_df.cluster_center.isna()) == False, "cluster_center"] = transplants_df.loc[(transplants_df.cluster_center.isna()) == False, "cluster_center"].apply(lambda x: ",".join([str(y) for y in x]))
             else:
                 transplants_df["cluster"] = 0
                 transplants_df["cluster_center"] = ""
