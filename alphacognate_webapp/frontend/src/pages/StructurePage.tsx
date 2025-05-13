@@ -3,7 +3,8 @@ import { useEffect, useState, useRef } from "react";
 import MolStarViewer from "../components/MolStarViewer";
 import TransplantTable from "../components/TransplantTable";
 import { Grid, Loader, ScrollArea } from "@mantine/core";
-import CognateLigandsTable from "../components/CognateLigandsTable";
+import { StructureInfo } from "../components/StructureInfo";
+// import CognateLigandsTable from "../components/CognateLigandsTable";
 
 export type CognateLigand = {
   id: number;
@@ -54,7 +55,7 @@ function StructurePage() {
   //make a url for the structure viewer
   const [structure_url, setStructureUrl] = useState<string | null>(null);
   const viewerInstanceRef = useRef<any>(null);
-
+  const [best, setBest] = useState(true);
   // const [cognateLigands, setCognateLigands] = useState<CognateLigand[]>([]); // State for cognate ligands
 
   // // Effect to log whenever cognateLigands changes
@@ -82,6 +83,7 @@ function StructurePage() {
             : 'http://localhost:8000/',
         );
         url.searchParams.append('structure_name', id);
+        if (best) url.searchParams.append('best', 'true');
         try {
           const response = await fetch(url.href);
           const json = (await response.json()) as TransplantApiResponse;
@@ -89,7 +91,6 @@ function StructurePage() {
             throw new Error('Failed to fetch data');
           }
           setTransplants(json.data); // Update state with fetched data
-          // setStructure(json.structure_data);
           let structure_url = new URL(
             json.structure_data?.url,
             process.env.NODE_ENV === 'production'
@@ -105,11 +106,12 @@ function StructurePage() {
       };
       fetchTransplantData();
     }
-  }, [id]);
+  }, [id, best]);
 
   return (
     <Grid>
       <Grid.Col span={6}>
+        {structure && <StructureInfo structure={structure} best={best} setBest={setBest} />}
         <ScrollArea h={"80vh"}>
           {loading ? <Loader /> : 
             <TransplantTable 

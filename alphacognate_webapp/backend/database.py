@@ -47,6 +47,7 @@ def clear_tables(session):
 def load_data(session, df_transplants, df_structures):
     #load structures into db
     for _, row in df_structures.iterrows():
+        print(f"Loading structure: {row['accession']}")
         structure = Structure(name=row['accession'], 
                               url = row['accession'] + "_transplants.cif.gz",
                               runtime=row['runtime'], 
@@ -59,6 +60,7 @@ def load_data(session, df_transplants, df_structures):
 
     grouped_transplants = df_transplants.groupby(['accession', 'ligand'])
     for _, group in grouped_transplants:
+        print(f"Loading transplant: {group.iloc[0]['accession']}")
         ligand_data = group.iloc[0]  # Take the first row to get ligand transplant and ligand details
         ligand = session.exec(select(Ligand).where(Ligand.smiles == ligand_data['ligand_smiles'])).first()
         
@@ -122,8 +124,8 @@ def main() -> None:
     DB_NAME = "postgres"
     DB_PASSWORD = os.getenv("DB_PASSWORD")
 
-    TRANSPLANTS_FILE = Path("/Users/matthewcrown/GitHub/AlphaCognate/app/cif-files/combined_transplants.tsv.gz")
-    STRUCTURE_SUMMARY = Path("/Users/matthewcrown/GitHub/AlphaCognate/app/cif-files/combined_structure_summaries.tsv.gz")
+    TRANSPLANTS_FILE = Path("../cif-files/combined_transplants.tsv.gz")
+    STRUCTURE_SUMMARY = Path("../cif-files/combined_structure_summaries.tsv.gz")
 
     if DB_PASSWORD is None:
         raise ValueError("DB_PASSWORD environment variable is not set!")

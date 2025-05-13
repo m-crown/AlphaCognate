@@ -73,10 +73,14 @@ def read_structures(
         meta={"totalRowCount": total_count}
     )
 
+from fastapi import Query
+from typing import Optional
+
 @app.get("/transplants/", response_model=TransplantsListResponse)
 def read_transplants(
     session: Session = Depends(get_session),
-    structure_name: str = Query(..., description="Filter transplants by structure name")
+    structure_name: str = Query(..., description="Filter transplants by structure name"),
+    best: bool = Query(False, description="Return only the best matching cognate ligand per transplant")
 ) -> TransplantsListResponse:
     
     structure = session.exec(select(Structure).where(Structure.name == structure_name)).first()
@@ -86,26 +90,37 @@ def read_transplants(
     ).all()
 
     transplant_full_list = []
+
     for transplant in transplants:
         ligand = session.get(Ligand, transplant.ligand_id)
         transplant_response = TransplantResponse(
-            transplant_id = transplant.id,
-            structure_name = transplant.structure_name,
-            ligand_id = transplant.ligand_id,
-            ligand_chain = transplant.ligand_chain,
-            ligand_residues = transplant.ligand_residues,
-            ec_list = transplant.ec_list,
-            tcs = transplant.tcs,
-            foldseek_rmsd = transplant.foldseek_rmsd,
-            global_rmsd = transplant.global_rmsd,
-            local_rmsd = transplant.local_rmsd,
-            hetcode = ligand.het_code,
-            name = ligand.name,
-            smiles = ligand.smiles
+            transplant_id=transplant.id,
+            structure_name=transplant.structure_name,
+            ligand_id=transplant.ligand_id,
+            ligand_chain=transplant.ligand_chain,
+            ligand_residues=transplant.ligand_residues,
+            ec_list=transplant.ec_list,
+            tcs=transplant.tcs,
+            foldseek_rmsd=transplant.foldseek_rmsd,
+            global_rmsd=transplant.global_rmsd,
+            local_rmsd=transplant.local_rmsd,
+            hetcode=ligand.het_code,
+            name=ligand.name,
+            smiles=ligand.smiles
         )
+
+        # Get all mappings
         cognate_ligands = session.exec(
-            select(CognateLigandMapping).where(CognateLigandMapping.ligand_instance_id == transplant.id)
+            select(CognateLigandMapping).where(
+                CognateLigandMapping.ligand_instance_id == transplant.id
+            )
         ).all()
+
+        # If best=True, keep only the mapping with the highest similarity
+        if best and cognate_ligands:
+            max_sim = max(cl.similarity for cl in cognate_ligands)
+            cognate_ligands = [cl for cl in cognate_ligands if cl.similarity == max_sim]
+
         cognate_ligand_response_list = []
         for cognate_ligand in cognate_ligands:
             cognate_ligand_detail = session.get(CognateLigand, cognate_ligand.cognate_ligand_id)
@@ -117,6 +132,7 @@ def read_transplants(
                 similarity=cognate_ligand.similarity
             )
             cognate_ligand_response_list.append(cognate_ligand_response)
+
         transplant_full_list.append(
             TransplantFull(
                 transplant=transplant_response,

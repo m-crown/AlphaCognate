@@ -45,28 +45,24 @@ const TransplantTable = ({ data, viewerInstanceRef,  }: TransplantTableProps) =>
   const columns = useMemo<MRT_ColumnDef<FlattenedRecord>[]>(
     () => [
       {
-        accessorKey: 'transplant_ligand_id',
-        header: 'Transplant ID',
-      },
-      {
-        accessorKey: 'transplant_structure_name',
-        header: 'Structure Name',
-      },
-      {
         accessorKey: 'name',
         header: 'Ligand',
+      },
+      {
+        accessorKey: 'similarity',
+        header: 'Similarity'
       },
       {
         accessorKey: 'transplant_tcs',
         header: 'tcs',
       },
       {
-        accessorKey: 'transplant_ligand_chain',
-        header: 'Chain',
+        accessorKey: 'transplant_name',
+        header: 'Transplanted Ligand'
       },
       {
-        accessorKey: 'id',
-        header: 'Coglig',
+        accessorKey: 'transplant_ligand_chain',
+        header: 'Chain',
       }
     ],
     [],
@@ -84,6 +80,7 @@ const TransplantTable = ({ data, viewerInstanceRef,  }: TransplantTableProps) =>
       onClick: () => {
         const selectedId = row.original.transplant_ligand_chain;
         const alreadySelected = currentlyClicked === selectedId;
+        console.log('Selected ID:', selectedId);
         // Update the cognate ligands in the parent component
         if (alreadySelected) {
           viewerInstanceRef.current?.visual.reset({ camera: true });
@@ -91,7 +88,7 @@ const TransplantTable = ({ data, viewerInstanceRef,  }: TransplantTableProps) =>
           setRowSelection({});
         } else {
           viewerInstanceRef.current?.visual.select({
-            data: [{ auth_asym_id: selectedId, color: { r: 255, g: 255, b: 0 }, focus: true }],
+            data: [{ auth_asym_id: selectedId, color: { r: 255, g: 255, b: 0 }, alpha: 0.5, focus: true }],
           });
           setCurrentlyClicked(selectedId);
           setRowSelection({ [row.id]: true });

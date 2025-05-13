@@ -123,3 +123,26 @@ The pipeline is configured using a YAML file, which can be specified using the `
 - `cognate_match`: true/false, when set to true only ligands with a cognate mapping in ProCogGraph will be transplanted.
 - `domain_match`: true/false, when set to true only transplants with a matching domain interaction profile to the experimentally observed ligand interaction will be retained.
 - `domains`: either "cath-alphafold" or "ted". This flag alters the pre-formatted predicted structure domain profiles which are used for analysis of domain-ligand interactions. See [pre-requisites](#pre-requisites).
+
+### Running the Webapp.
+
+Following completion of an analysis, data can be loaded and visualsied in the webapp. The webapp consists of a Docker compose file used to create a backend FastAPI server, frontend Nginx server (serving a React app) and a PostgreSQL database. 
+
+To load data into the webapp, do the following:
+
+1. Copy the combined_transplant.tsv.gz and combined_structures.tsv.gz files along with the transplanted cif files to the cif-files directory in the webapp directory.
+2. Load the information into the database using the following command:
+
+```bash
+docker compose up -d postgresdb
+python3 database.py
+docker compose down postgresdb
+```
+
+3. Start the webapp using the following command:
+
+```bash
+docker compose up
+```
+
+The webapp will be available at http://localhost:80.

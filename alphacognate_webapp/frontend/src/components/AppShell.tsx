@@ -4,6 +4,7 @@ import classes from '../css/AppShell.module.css';
 import { Outlet } from 'react-router-dom';
 import { Link } from 'react-router-dom';
 import { MantineLogo } from '@mantinex/mantine-logo';
+import { Logo } from './Logo';
 
 export function MobileNavbar() {
   const [opened, { toggle }] = useDisclosure();
@@ -18,7 +19,7 @@ export function MobileNavbar() {
         <Group h="100%" px="md">
           <Burger opened={opened} onClick={toggle} hiddenFrom="sm" size="sm" />
           <Group justify="space-between" style={{ flex: 1 }}>
-            <MantineLogo size={30} />
+            <Logo/>
             <Group ml="xl" gap={2} visibleFrom="sm">
               <Button className={classes.control} component={Link} to="/">Home</Button>
               <Button className={classes.control} component={Link} to="/about">About</Button>

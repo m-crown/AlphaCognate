@@ -17,3 +17,4 @@ app/credentials/pg_db_pass.txt
 /alphacognate_pipeline/demo_data
 /alphacognate_pipeline/foldseek
 alphacognate_webapp/cif-files/
+alphacognate_pipeline/pymol-open-source/
