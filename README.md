@@ -10,6 +10,7 @@ To install AlphaCognate, clone the repository and install the required dependenc
 git clone https://github.com/m-crown/AlphaCognate.git
 cd AlphaCognate/alphacognate_pipeline
 uv venv
+source .venv/bin/activate
 uv pip install -r requirements.txt
 ```
 
