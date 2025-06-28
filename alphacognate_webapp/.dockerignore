@@ -1,0 +1,7 @@
+# Ignore structure files
+backend/cif-files/
+
+# Optional: ignore other unneeded stuff
+__pycache__/
+*.pyc
+.env

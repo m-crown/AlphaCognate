@@ -2,3 +2,5 @@ sqlmodel
 fastapi[standard]
 psycopg2-binary
 pandas
+boto3
+gemmi

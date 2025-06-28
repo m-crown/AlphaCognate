@@ -1,5 +1,12 @@
+import MolstarViewer from "../components/MolViewSpec";
+
 const NotFoundPage = () => {
-    return <h1>404 - Page Not Found</h1>;
-  };
-  
-  export default NotFoundPage;
+  return (
+    <div>
+      <h1>404 - Page Not Found</h1>
+      <MolstarViewer />
+    </div>
+  );
+};
+
+export default NotFoundPage;

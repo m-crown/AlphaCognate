@@ -135,9 +135,9 @@ To load data into the webapp, do the following:
 2. Load the information into the database using the following command:
 
 ```bash
-docker compose up -d postgresdb
+docker compose up -d postgres
 python3 database.py
-docker compose down postgresdb
+docker compose down postgres
 ```
 
 3. Start the webapp using the following command:
@@ -147,3 +147,23 @@ docker compose up
 ```
 
 The webapp will be available at http://localhost:80.
+
+For development, run only the postgresdb and nginx containers:
+
+```bash
+docker compose up -d postgres
+docker compose up -d nginx
+```
+
+Then run the FastAPI server in a separate terminal:
+
+```bash
+fastapi run alphacognate_webapp/app.py
+```
+
+And run the React app in a separate terminal:
+
+```bash
+cd alphacognate_webapp/frontend
+npm run dev
+```

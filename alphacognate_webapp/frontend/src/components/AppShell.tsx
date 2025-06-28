@@ -3,7 +3,6 @@ import { useDisclosure } from '@mantine/hooks';
 import classes from '../css/AppShell.module.css';
 import { Outlet } from 'react-router-dom';
 import { Link } from 'react-router-dom';
-import { MantineLogo } from '@mantinex/mantine-logo';
 import { Logo } from './Logo';
 
 export function MobileNavbar() {

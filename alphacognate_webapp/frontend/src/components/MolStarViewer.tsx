@@ -27,7 +27,7 @@ const MolstarViewer: React.FC<MolstarViewerProps> = ({ url, viewerInstanceRef })
           bgColor: "black",
           hideControls: true,
           expanded: false,
-          encoding: "cif",
+          encoding: "mmcif",
         });
       } catch (error) {
         console.error("Error loading structure:", error);

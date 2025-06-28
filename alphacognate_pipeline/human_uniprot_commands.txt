@@ -1,0 +1,14 @@
+#download the 20,406 canonical uniprot ids from uniprot
+gzcat uniprotkb_proteome_UP000005640_AND_revi_2025_05_05.tsv.gz | cut -f1 | tail -n+2 > human_uniprot_ids.tsv
+#upload to tower and download alphafold structures with get_alphafold_structures
+python3 bin/get_alphafold_structures.py human_uniprot_ids.tsv --output_dir human_proteome_alphafold
+#verify that all files are present
+wc -l human_proteome_alphafold #HOW DID WE CHECK THIS ??
+#make a config file for ted/cathaf domain analysis separately
+DO SOMETHING HERE : human_proteome_ac_config_cathaf.yaml
+DO SOMETHING HERE : human_proteome_ac_config_ted.yaml
+#run alphacognate
+snakemake -s alphacognate_pipeline.smk --configfile human_proteome_ac_config_cathaf.yaml --cores 70
+
+#to move into cif-files dir for webapp
+find human_proteome_alphacognate_cathaf/transplanted_structures -name *.cif.gz -exec mv {} .

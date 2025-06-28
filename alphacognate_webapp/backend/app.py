@@ -1,27 +1,25 @@
 from fastapi import FastAPI, Depends, HTTPException, Query
 from fastapi.encoders import jsonable_encoder
-from fastapi.responses import JSONResponse
-from typing import Annotated, List
+from fastapi.responses import JSONResponse, StreamingResponse, Response
+from typing import Annotated, List, Optional
 from sqlmodel import Session, select, func
-
+import pandas as pd
 
 from models import CognateLigand, CognateLigandResponse, Structure, StructuresListResponse, Transplant, TransplantFull, Ligand, CognateLigandMapping, TransplantResponse, TransplantsListResponse
 from database import create_db_engine
 
-# #fastapi needs relative import, running directly needs direct.
-# try:
-#     # For standalone script execution
-#     from models import CognateLigand, CognateLigandResponse, Structure, StructuresListResponse, Transplant, TransplantFull, Ligand, CognateLigandMapping, TransplantResponse, TransplantsListResponse
-#     from database import create_db_engine
-# except ImportError:
-#     # For FastAPI when run inside a package
-#     from .models import CognateLigand, CognateLigandResponse, Structure, StructuresListResponse, Transplant, TransplantFull, Ligand, CognateLigandMapping, TransplantResponse, TransplantsListResponse   
-#     from .database import create_db_engine
-
 from dotenv import load_dotenv
 import os
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi import Query
 
+from abc import ABC, abstractmethod
+from typing import BinaryIO
+from pathlib import Path
+import boto3
+import gzip 
+import io 
+import gemmi
 
 load_dotenv()  # Load environment variables from .env file
 DB_PASSWORD = os.getenv("DB_PASSWORD")
@@ -72,9 +70,6 @@ def read_structures(
         data=structures,
         meta={"totalRowCount": total_count}
     )
-
-from fastapi import Query
-from typing import Optional
 
 @app.get("/transplants/", response_model=TransplantsListResponse)
 def read_transplants(
@@ -147,3 +142,87 @@ def read_transplants(
 def search_structures(session: Session = Depends(get_session), query: str = Query("")):
     results = session.exec(select(Structure.name).where(Structure.name.ilike(f"%{query}%")).limit(5)).all()
     return results
+
+class StructureStorage(ABC):
+    @abstractmethod
+    def get(self, structure_id: str) -> BinaryIO:
+        pass
+
+class LocalStructureStorage(StructureStorage):
+    def __init__(self, base_path: Path):
+        self.base_path = base_path
+
+    def get(self, structure_id: str) -> BinaryIO:
+        path = self.base_path / f"{structure_id}_transplants.cif.gz"
+        print(f"Loading structure from TEST {path}", flush=True)
+        return path.open("rb")
+
+class S3StructureStorage(StructureStorage):
+    def __init__(self, bucket: str):
+        self.bucket = bucket
+        self.s3 = boto3.client("s3")
+
+    def get(self, structure_id: str) -> BinaryIO:
+        import io
+        obj = self.s3.get_object(Bucket=self.bucket, Key=f"{structure_id}_transplants.cif.gz")
+        return io.BytesIO(obj["Body"].read())
+
+USE_S3 = os.getenv("USE_S3", "false").lower() == "true"
+
+def get_storage() -> StructureStorage:
+    if USE_S3:
+        return S3StructureStorage(bucket="your-bucket-name")
+    return LocalStructureStorage(base_path=Path("/app/cif-files/"))
+
+@app.get("/structure/{structure_id}")
+def get_structure(
+    structure_id: str,
+    chains: Optional[list[str]] = Query(default=None),
+    storage: StructureStorage = Depends(get_storage),
+):
+    try:
+        file_obj = storage.get(structure_id)
+        print(f"Loading structure from {getattr(storage, 'base_path', 'unknown')}", flush=True)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Structure not found {getattr(storage, 'base_path', 'unknown')}")
+
+    if chains:
+        return StreamingResponse(
+            filter_structure_chains(file_obj, chains),
+            media_type="chemical/x-cif"
+        )
+    print(f"Loading structure from {getattr(storage, 'base_path', 'unknown')}", flush=True)
+    return StreamingResponse(file_obj, media_type="chemical/x-cif")
+
+def filter_structure_chains(file_obj: BinaryIO, allowed_chains: list[str]) -> BinaryIO:
+    #allowed_chains = ["A"]
+    with gzip.open(file_obj, 'rt') as f:
+        doc = gemmi.cif.read_string(f.read())
+
+    block = doc.sole_block()
+    structure = gemmi.make_structure_from_block(block)
+    model = structure[0]
+    struct_conf = block.get_mmcif_category('_struct_conf.')
+    struct_conf_type = block.get_mmcif_category('_struct_conf_type.')
+    # Filter to select only requested chains
+    to_be_deleted = []
+
+    for idx, chain in enumerate(model):
+        if chain.name not in allowed_chains:
+            to_be_deleted.append(idx)
+
+    for index in reversed(to_be_deleted):
+        del model[index]
+
+    # Convert back to mmCIF
+    structure.update_mmcif_block(block)
+    block.set_mmcif_category("_struct_conf.", struct_conf)
+    block.set_mmcif_category("_struct_conf_type.", struct_conf_type)
+    #remove problematic chem comp category
+    block.find_mmcif_category('_chem_comp.').erase()
+    # Compress and return as BinaryIO
+    output = io.BytesIO()
+    with gzip.GzipFile(fileobj=output, mode="wb") as gz:
+        gz.write(block.as_string().encode("utf-8"))
+    output.seek(0)
+    return output
