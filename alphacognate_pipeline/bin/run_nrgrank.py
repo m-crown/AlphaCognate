@@ -47,7 +47,8 @@ def write_pdb(coord_list, name, path, ligand_names, extra_info):
 
 
 def prep_bd_site(transplant_table, output_dir, bd_site_offset):
-    cluster_centers = transplant_table['cluster_center'].unique()
+    _log.info(transplant_table.head())
+    cluster_centers = transplant_table.loc[transplant_table.cluster_center.notna(), 'cluster_center'].unique() #temporary - find out why gemmi is giving nan cluster centers.
     output_file_list = []
     for cluster_center_counter, cluster_center in enumerate(cluster_centers):
         cluster_center = cluster_center.split(',')
@@ -105,7 +106,6 @@ def main():
             table_name=None
 
     _log.error(f"Found {len(table_group)} tables in the CIF file.")
-    _log.error(table_group)
     transplant_table = get_table_as_df(table_group, -3)
     cognate_table = get_table_as_df(table_group, -2)
     bd_site_file_list = prep_bd_site(transplant_table, os.path.dirname(target_path_cif), 5)
