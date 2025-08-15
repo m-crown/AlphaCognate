@@ -84,7 +84,7 @@ rule aggregate_transplants:
 
 rule rank_ligands:
     input:
-        config["output_dir"] + "/transplanted_structures/{id}_transplants.cif.gz"
+        config["output_dir"] + "/transplanted_structures/{id}_transplants.cif"
     output:
         config["output_dir"] + "/filtered_structures/{id}_transplants_filtered_plddt.cif.gz",
         config["output_dir"] + "/filtered_structures/{id}_structure_summary.tsv.gz", #temporary to force running nrgrank
@@ -100,7 +100,7 @@ rule transplant_ligands:
     input:
         foldseek = config["output_dir"] + "/foldseek_split/{id}_foldseek.tsv.gz"
     output:
-        config["output_dir"] + "/transplanted_structures/{id}_transplants.cif.gz",
+        config["output_dir"] + "/transplanted_structures/{id}_transplants.cif",
         temp(config["output_dir"] + "/transplanted_structures/{id}_transplants.tsv.gz"),
         temp(config["output_dir"] + "/transplanted_structures/{id}_structure_summary.tsv.gz")
     params:
@@ -110,7 +110,7 @@ rule transplant_ligands:
         domain_match_only = config["domain_match"]
     log: config["output_dir"] + "/logs/transplants/{id}_transplant.log"
     shell:
-        """python3 bin/alphacognate_transplant.py --foldseek_file {input.foldseek} --outdir {params.output_dir} --structure_database_directory {params.procoggraph_foldseek_directory} {params.cognate_match} {params.domain_match_only} && gzip {params.output_dir}/{wildcards.id}_transplants.cif"""
+        """python3 bin/alphacognate_transplant.py --foldseek_file {input.foldseek} --outdir {params.output_dir} --structure_database_directory {params.procoggraph_foldseek_directory} {params.cognate_match} {params.domain_match_only}"""
 
 rule split_foldseek:
     input:
