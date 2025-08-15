@@ -6,3 +6,4 @@ numpy
 pydantic
 requests
 openbabel-wheel
+git+https://github.com/NRGlab/NRGRank.git

@@ -61,26 +61,38 @@ structure_dir = structures_manifest.structure_dir.values[0]
 
 rule all:
     input: 
-         all_transplant_cifs = expand(config["output_dir"] + "/transplanted_structures/{id}_transplants.cif.gz", id = structures),
+         all_transplant_cifs = expand(config["output_dir"] + "/filtered_structures/{id}_transplants_filtered_plddt.cif.gz", id = structures),
          combined_transplant_tsv = config["output_dir"] + "/combined_transplants.tsv.gz",
          combined_structure_summaries = config["output_dir"] + "/combined_structure_summaries.tsv.gz",
 
 rule aggregate_transplants:
     input:
-        all_transplant_files = expand(config["output_dir"] + "/transplanted_structures/{id}_transplants.tsv.gz", id = structures), #require the files but dont use in command (for shell max arg limits)
-        all_structure_files = expand(config["output_dir"] + "/transplanted_structures/{id}_structure_summary.tsv.gz", id = structures), #require the files but dont use in command (for shell max arg limits)
+        all_transplant_files = expand(config["output_dir"] + "/filtered_structures/{id}_transplants.tsv.gz", id = structures), #require the files but dont use in command (for shell max arg limits)
+        all_structure_files = expand(config["output_dir"] + "/filtered_structures/{id}_structure_summary.tsv.gz", id = structures), #require the files but dont use in command (for shell max arg limits)
 
     output:
         combined_transplant_tsv = config["output_dir"] + "/combined_transplants.tsv.gz",
         combined_structure_summaries = config["output_dir"] + "/combined_structure_summaries.tsv.gz"
     params:
         output_dir = config["output_dir"],
-        tsv_dir = config["output_dir"] + "/transplanted_structures/"
+        tsv_dir = config["output_dir"] + "/filtered_structures/"
     log: config["output_dir"] + "/logs/aggregate_transplant.log"
     shell:
         """
         python3 bin/combine_tsv.py {params.tsv_dir} {params.output_dir}/combined_transplants.tsv.gz {params.output_dir}/combined_structure_summaries.tsv.gz
         """
+
+rule rank_ligands:
+    input:
+        config["output_dir"] + "/transplanted_structures/{id}_transplants.cif.gz"
+    output:
+        config["output_dir"] + "/filtered_structures/{id}_transplants_filtered_plddt.cif.gz"
+    params:
+        output_filename = "{id}_filtered_plddt.cif",
+        output_dir = config["output_dir"] + "/filtered_structures",
+    log: config["output_dir"] + "/logs/rank_ligands/{id}_rank.log"
+    shell:
+        """python3 bin/run_nrgrank.py --target_path_cif {input} --output_filename {params.output_filename} --output_dir {params.output_dir} &&  gzip {params.output_dir}/{wildcards.id}_filtered_plddt.cif"""
 
 rule transplant_ligands:
     input:
