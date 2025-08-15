@@ -86,7 +86,9 @@ rule rank_ligands:
     input:
         config["output_dir"] + "/transplanted_structures/{id}_transplants.cif.gz"
     output:
-        config["output_dir"] + "/filtered_structures/{id}_transplants_filtered_plddt.cif.gz"
+        config["output_dir"] + "/filtered_structures/{id}_transplants_filtered_plddt.cif.gz",
+        config["output_dir"] + "/filtered_structures/{id}_structure_summary.tsv.gz", #temporary to force running nrgrank
+        config["output_dir"] + "/filtered_structures/{id}_transplants.tsv.gz" #temporary to force running nrgrank
     params:
         output_filename = "{id}_filtered_plddt.cif",
         output_dir = config["output_dir"] + "/filtered_structures",
