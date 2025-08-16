@@ -62,7 +62,7 @@ structure_dir = structures_manifest.structure_dir.values[0]
 rule all:
     input: 
          all_transplant_cifs = expand(config["output_dir"] + "/transplanted_structures/{id}_transplants.cif", id = structures), #eventually want to modify this to use the outputs from the ligand ranking step - i.e. a cif with the best ranked ligands retained
-         all_ranked_ligands = expand(config["output_dir"] + "/filtered_structures/{id}_transplants.csv", id = structures),
+         all_ranked_ligands = expand(config["output_dir"] + "/filtered_structures/{id}/{id}_transplants.csv", id = structures),
          combined_transplant_tsv = config["output_dir"] + "/combined_transplants.tsv.gz",
          combined_structure_summaries = config["output_dir"] + "/combined_structure_summaries.tsv.gz",
 
@@ -89,10 +89,10 @@ rule rank_ligands:
         config["output_dir"] + "/transplanted_structures/{id}_transplants.cif"
     output:
         #config["output_dir"] + "/filtered_structures/{id}_transplants_filtered_plddt.cif.gz",
-        config["output_dir"] + "/filtered_structures/{id}_transplants.csv"
+        config["output_dir"] + "/filtered_structures/{id}/{id}_transplants.csv"
     params:
         output_filename = "{id}_filtered_plddt.cif",
-        output_dir = config["output_dir"] + "/filtered_structures",
+        output_dir = config["output_dir"] + "/filtered_structures/{id}",
     log: config["output_dir"] + "/logs/rank_ligands/{id}_rank.log"
     shell:
         """python3 bin/run_nrgrank.py --target_path_cif {input} --output_filename {params.output_filename} --output_dir {params.output_dir}"""
