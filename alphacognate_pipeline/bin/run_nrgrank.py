@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 import subprocess
 from nrgrank import generate_conformers,process_target,process_ligands,nrgrank_main
 from clean_cif import filter_cif_by_plddt
@@ -8,6 +9,7 @@ import io
 import argparse
 import gzip
 import logging
+from gemmi import cif
 
 _log = logging.getLogger(__name__)
 
@@ -17,14 +19,7 @@ def convert_to_mol2(input_path, output_path):
     subprocess.run(open_babel_command, shell=True, check=True)
 
 
-def get_table_as_df(table_group, table_index):
-    data = table_group[table_index]
-    data_string = "\n".join(data['Lines'])
-    df = pd.read_csv(io.StringIO(data_string), sep=' ', header=None, quotechar="'", names=data['Header'], engine='python')
-    return df
-
-
-def write_pdb(coord_list, name, path, ligand_names, extra_info):
+def write_centers_pdb(coord_list, name, path, ligand_names, extra_info):
     if not os.path.isdir(os.path.dirname(path)):
         os.mkdir(os.path.dirname(path))
     if not os.path.isdir(path):
@@ -47,8 +42,15 @@ def write_pdb(coord_list, name, path, ligand_names, extra_info):
 
 
 def prep_bd_site(transplant_table, output_dir, bd_site_offset):
-    _log.info(transplant_table.head())
-    cluster_centers = transplant_table.loc[transplant_table.cluster_center.notna(), 'cluster_center'].unique() #temporary - find out why gemmi is giving nan cluster centers.
+    cluster_centers = transplant_table.loc[
+        (transplant_table["cluster_center"].notna()) &
+        (transplant_table["cluster_center"] != ""),
+        "cluster_center"
+    ].unique() #temporary - find out why gemmi is giving nan cluster centers.
+    _log.error(cluster_centers)
+    if len(cluster_centers) == 0:
+        _log.error("No cluster centers found in transplant table. Exiting.")
+        sys.exit(1)
     output_file_list = []
     for cluster_center_counter, cluster_center in enumerate(cluster_centers):
         cluster_center = cluster_center.split(',')
@@ -61,7 +63,7 @@ def prep_bd_site(transplant_table, output_dir, bd_site_offset):
             [cluster_center[0], cluster_center[1], cluster_center[2] + bd_site_offset],
             [cluster_center[0], cluster_center[1], cluster_center[2] - bd_site_offset],
         ]
-        file_path = write_pdb(new_list, f'bd_site_{cluster_center_counter}', output_dir,None, None)
+        file_path = write_centers_pdb(new_list, f'bd_site_{cluster_center_counter}', output_dir,None, None)
         output_file_list.append(file_path)
     return output_file_list
 
@@ -75,51 +77,38 @@ def main():
 
 
     target_path_cif = args.target_path_cif
-    if target_path_cif.endswith('.gz'):
-        with gzip.open(target_path_cif, 'rt') as f:
-            lines = f.readlines()
-    else:
-        with open(target_path_cif, 'r') as infile:
-            lines = infile.readlines()
-    group_start = False
-    table_group = []
-    temp_group = []
-    temp_header = []
-    table_name = None
-    for line in lines:
-        if line.startswith('loop_'):
-            group_start = True
-        if group_start:
-            if line != 'loop_\n' and line != '\n':
-                temp_line = line.strip()
-                if temp_line.startswith('_'):
-                    temp_line = temp_line.split('.')
-                    table_name = temp_line[0][1:]
-                    temp_header.append(temp_line[1])
-                else:
-                    temp_group.append(temp_line)
-        if (line.startswith('\n') and group_start) or (line == lines[-1]):
-            group_start = False
-            table_group.append({"Name":table_name, 'Header':temp_header, 'Lines':temp_group})
-            temp_group = []
-            temp_header = []
-            table_name=None
+    if not Path(target_path_cif).exists():
+        _log.error(f"Target CIF file {target_path_cif} does not exist.")
+        sys.exit(1)
 
-    _log.error(f"Found {len(table_group)} tables in the CIF file.")
-    transplant_table = get_table_as_df(table_group, -3)
-    cognate_table = get_table_as_df(table_group, -2)
-    bd_site_file_list = prep_bd_site(transplant_table, os.path.dirname(target_path_cif), 5)
+    #make sure the output directory exists
+    Path(f"{args.output_dir}").mkdir(parents=True, exist_ok=True)
+    
+    #load the af structure to which ligands will be transplanted
+    af_structure = cif.read(target_path_cif)
+    structure_block = af_structure.sole_block()
+    transplant_table = pd.DataFrame(structure_block.get_mmcif_category('_alphacognate_transplants.'))
+    cognate_table = pd.DataFrame(structure_block.get_mmcif_category('_alphacognate_cognate_mapping.'))
+    
+    analysis_file_path = Path(f"{args.output_dir}/analysis")
+    Path(analysis_file_path).mkdir(parents=True, exist_ok=True)
+
+    bd_site_file_list = prep_bd_site(transplant_table, analysis_file_path, 5)
+
     for bd_site_counter, bd_site_file in enumerate(bd_site_file_list):
         '''
         Target
         '''
-        target_path_cif_filtered_plddt = os.path.splitext(target_path_cif)[0] + '_filtered_plddt.cif'
-        target_path_mol2 = os.path.splitext(target_path_cif_filtered_plddt)[0] + '.mol2'
+        # Filter residues in structure based on pLDDT and store as a new CIF file and mol2 file. Store in output directory
+        filtered_plddt_filename = Path(target_path_cif)
+        filtered_plddt_basename = filtered_plddt_filename.name
+        target_path_cif_filtered_plddt = analysis_file_path / f"{filtered_plddt_basename}_filtered_plddt.cif"
+        target_path_mol2 = analysis_file_path / f"{filtered_plddt_basename}.mol2"
         if bd_site_counter == 0:
             filter_cif_by_plddt(target_path_cif, target_path_cif_filtered_plddt)
             if not os.path.exists(target_path_mol2):
                 convert_to_mol2(target_path_cif_filtered_plddt, target_path_mol2)
-        processed_target_path = process_target(target_path_mol2, bd_site_file, ignore_distance_sphere=True, overwrite=True, USE_CLASH=False)
+        processed_target_path = process_target(str(target_path_mol2), str(bd_site_file), ignore_distance_sphere=True, overwrite=True, USE_CLASH=False)
         '''
         Ligands
         '''
