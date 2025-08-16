@@ -95,19 +95,19 @@ def main():
 
     bd_site_file_list = prep_bd_site(transplant_table, analysis_file_path, 5)
 
+    # Filter residues in structure based on pLDDT and store as a new CIF file and mol2 file. Store in output directory
+    filtered_plddt_filename = Path(target_path_cif)
+    filtered_plddt_basename = filtered_plddt_filename.name
+    target_path_cif_filtered_plddt = analysis_file_path / f"{filtered_plddt_basename}_filtered_plddt.cif"
+    target_path_mol2 = analysis_file_path / f"{filtered_plddt_basename}.mol2"
+    filter_cif_by_plddt(target_path_cif, target_path_cif_filtered_plddt)
+    if not os.path.exists(target_path_mol2):
+        convert_to_mol2(target_path_cif_filtered_plddt, target_path_mol2)
+
     for bd_site_counter, bd_site_file in enumerate(bd_site_file_list):
         '''
         Target
         '''
-        # Filter residues in structure based on pLDDT and store as a new CIF file and mol2 file. Store in output directory
-        filtered_plddt_filename = Path(target_path_cif)
-        filtered_plddt_basename = filtered_plddt_filename.name
-        target_path_cif_filtered_plddt = analysis_file_path / f"{filtered_plddt_basename}_filtered_plddt.cif"
-        target_path_mol2 = analysis_file_path / f"{filtered_plddt_basename}.mol2"
-        if bd_site_counter == 0:
-            filter_cif_by_plddt(target_path_cif, target_path_cif_filtered_plddt)
-            if not os.path.exists(target_path_mol2):
-                convert_to_mol2(target_path_cif_filtered_plddt, target_path_mol2)
         processed_target_path = process_target(str(target_path_mol2), str(bd_site_file), ignore_distance_sphere=True, overwrite=True, USE_CLASH=False)
         '''
         Ligands
