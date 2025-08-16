@@ -450,10 +450,15 @@ def main():
                 #this replacement is necessary because we set center of mass as string in transplant model. sometimes gemmi returns np.nan as the center of mass - investigate this.
                 #TODO : This has multiple records for same com due to cognate ligand mappings. should remove and merge.
                 transplants_df["center_of_mass_split"] = transplants_df["ligand_center_of_mass"].replace("", np.nan).str.split(",")
-                points = transplants_df.loc[(transplants_df.center_of_mass_split.isna() == False), "center_of_mass_split"].apply(lambda x: [float(y) for y in x]).values
+                
+                center_of_mass_mask = transplants_df["center_of_mass_split"].notna()
+                
+                points = transplants_df.loc[center_of_mass_mask, "center_of_mass_split"].apply(lambda x: [float(y) for y in x]).values
                 if len(points) < 5:
-                    transplants_df.loc[(transplants_df.center_of_mass_split.isna() == False), "cluster"] = -1
-                    transplants_df.loc[(transplants_df.center_of_mass_split.isna() == False), "cluster_center"] = ""
+                    #if there are fewer than 5 points, we cannot so each ligand is assigned as its own cluster.
+                    transplants_df.loc[center_of_mass_mask, "cluster"] = range(1, center_of_mass_mask.sum() + 1)
+                    #set the cluster center to the center of mass for each ligand.
+                    transplants_df.loc[center_of_mass_mask, "cluster_center"] = transplants_df.loc[center_of_mass_mask, "ligand_center_of_mass"]
                 else:
                     #discuss this in a disccusion section.
                     points = np.array([np.array(point) for point in points])
