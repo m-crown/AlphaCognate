@@ -121,14 +121,16 @@ def main():
             process_ligands(os.path.join(output_folder_path, 'conformer.mol2'), 1, output_dir=output_folder_path)
         processed_ligand_path = os.path.join(output_folder_path, 'preprocessed_ligands_1_conf')
         target = os.path.splitext(os.path.basename(target_path_cif))[0]
-        nrgrank_main(
+        output = nrgrank_main(
             target, 
             processed_target_path, 
             processed_ligand_path, 
             args.output_dir,
             write_info=False,
-            USE_CLASH=False
+            USE_CLASH=False, 
+            write_csv = False,
         )
+        _log.error(output)
 
 if __name__ == '__main__':
     main()
