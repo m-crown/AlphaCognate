@@ -71,7 +71,7 @@ def prep_bd_site(transplant_table, output_dir, bd_site_offset):
 def main():
     args = argparse.ArgumentParser(description="Run NRGRank on a target CIF file.")
     args.add_argument('--target_path_cif', type=str, help='Path to the target CIF file.')
-    args.add_argument('--output_filename', type=str, help='Name of the output file (without extension).')
+    args.add_argument('--output_prefix', type=str, help='Name of the output file (without extension).')
     args.add_argument('--output_dir', type=str, default='.', help='Directory to save output files.')
     args = args.parse_args()
 
@@ -103,7 +103,7 @@ def main():
     filter_cif_by_plddt(target_path_cif, target_path_cif_filtered_plddt)
     if not os.path.exists(target_path_mol2):
         convert_to_mol2(target_path_cif_filtered_plddt, target_path_mol2)
-
+    output_all_bds = []
     for bd_site_counter, bd_site_file in enumerate(bd_site_file_list):
         '''
         Target
@@ -121,7 +121,7 @@ def main():
             process_ligands(os.path.join(output_folder_path, 'conformer.mol2'), 1, output_dir=output_folder_path)
         processed_ligand_path = os.path.join(output_folder_path, 'preprocessed_ligands_1_conf')
         target = os.path.splitext(os.path.basename(target_path_cif))[0]
-        output = nrgrank_main(
+        filename, output = nrgrank_main(
             target, 
             processed_target_path, 
             processed_ligand_path, 
@@ -130,7 +130,14 @@ def main():
             USE_CLASH=False, 
             write_csv = False,
         )
-        _log.error(output)
+        output_bd = pd.DataFrame([x.split(',') for x in output])
+        output_bd.columns = output_bd.iloc[0]
+        output_bd = output_bd.drop(0)
+        output_bd["Binding site"] = bd_site_counter
+        output_all_bds.append(output_bd)
+    output_all_bds_df = pd.concat(output_all_bds, ignore_index=True)
+    output_all_bds_df.to_csv(f"{args.output_dir}/{args.output_prefix}_cognate_ranking.csv", index=False)
+    _log.info(f"Results saved to {args.output_dir}/{args.output_prefix}_cognate_ranking.csv")
 
 if __name__ == '__main__':
     main()
