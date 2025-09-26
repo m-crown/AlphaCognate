@@ -1,0 +1,6 @@
+structure_manifest: "kahraman_uniprot_ids.tsv"
+output_dir: "kahraman_alphacognate_cathaf"
+domains: "cathaf"
+cognate_match: true
+domain_match: true
+top_ranked: false
