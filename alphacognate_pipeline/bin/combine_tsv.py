@@ -16,7 +16,7 @@ def combine_tsv_files(input_dir, output_transplant_file, output_structure_file):
             except pd.errors.EmptyDataError:
                 print(f"Skipping empty file: {file_path}")
                 continue
-            if filename.endswith("_transplants.tsv") or filename.endswith("_transplants.tsv.gz"):
+            if filename.endswith("_transplants_ranked.tsv") or filename.endswith("_transplants_ranked.tsv.gz"):
                 transplant_dfs.append(df)
             elif filename.endswith("_structure_summary.tsv") or filename.endswith("_structure_summary.tsv.gz"):
                 structure_dfs.append(df)

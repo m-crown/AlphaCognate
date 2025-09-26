@@ -1,7 +1,8 @@
 import os
 from pathlib import Path
 import subprocess
-from nrgrank import generate_conformers,process_target,process_ligands,nrgrank_main
+import time
+from nrgrank import generate_conformers, process_target, process_ligands,nrgrank_main
 from clean_cif import filter_cif_by_plddt
 import sys
 import pandas as pd
@@ -42,18 +43,32 @@ def write_centers_pdb(coord_list, name, path, ligand_names, extra_info):
 
 
 def prep_bd_site(transplant_table, output_dir, bd_site_offset):
-    cluster_centers = transplant_table.loc[
-        (transplant_table["cluster_center"].notna()) &
-        (transplant_table["cluster_center"] != ""),
-        "cluster_center"
-    ].unique() #temporary - find out why gemmi is giving nan cluster centers.
-    _log.error(cluster_centers)
-    if len(cluster_centers) == 0:
+    cluster_mapping = (
+        transplant_table.loc[
+            (transplant_table["cluster"].notna()) &
+            (transplant_table["cluster"] != "") &
+            (transplant_table["cluster_center"].notna()) &
+            (transplant_table["cluster_center"] != ""),
+            ["cluster", "cluster_center"]
+        ]
+        .drop_duplicates()
+    ) #temporary - find out why gemmi is giving nan cluster centers.
+    cluster_mapping["cluster"] = (
+        cluster_mapping["cluster"].astype(float).astype(int)
+    )
+    cluster_dict = dict(zip(
+        cluster_mapping["cluster"],
+        cluster_mapping["cluster_center"]
+    ))
+
+    _log.error(cluster_mapping)
+    if len(cluster_mapping) == 0:
         _log.error("No cluster centers found in transplant table. Exiting.")
         sys.exit(1)
     output_file_list = []
-    for cluster_center_counter, cluster_center in enumerate(cluster_centers):
-        cluster_center = cluster_center.split(',')
+    for cluster_int in cluster_dict.keys():
+        cluster_center_coords = cluster_dict[cluster_int]
+        cluster_center = cluster_center_coords.split(',')
         cluster_center = [float(x) for x in cluster_center]
         new_list = [
             [cluster_center[0] + bd_site_offset, cluster_center[1], cluster_center[2]],
@@ -63,7 +78,7 @@ def prep_bd_site(transplant_table, output_dir, bd_site_offset):
             [cluster_center[0], cluster_center[1], cluster_center[2] + bd_site_offset],
             [cluster_center[0], cluster_center[1], cluster_center[2] - bd_site_offset],
         ]
-        file_path = write_centers_pdb(new_list, f'bd_site_{cluster_center_counter}', output_dir,None, None)
+        file_path = write_centers_pdb(new_list, f'bd_site_{cluster_int}', output_dir,None, None)
         output_file_list.append(file_path)
     return output_file_list
 
@@ -75,6 +90,7 @@ def main():
     args.add_argument('--output_dir', type=str, default='.', help='Directory to save output files.')
     args = args.parse_args()
 
+    start_time = time.time()
 
     target_path_cif = args.target_path_cif
     if not Path(target_path_cif).exists():
@@ -104,40 +120,55 @@ def main():
     if not os.path.exists(target_path_mol2):
         convert_to_mol2(target_path_cif_filtered_plddt, target_path_mol2)
     output_all_bds = []
-    for bd_site_counter, bd_site_file in enumerate(bd_site_file_list):
-        '''
-        Target
-        '''
+    for count , bd_site_file in enumerate(bd_site_file_list):
+        if count == 0:
+            first_binding_site = True
+        bd_site_id = os.path.basename(os.path.splitext(bd_site_file)[0]).split('_')[-1]
+        ### Target prep ###
         processed_target_path = process_target(str(target_path_mol2), str(bd_site_file), ignore_distance_sphere=True, overwrite=True, USE_CLASH=False)
-        '''
-        Ligands
-        '''
+        ### Ligand prep ###
         output_folder_path = os.path.dirname(processed_target_path)
         smiles_df = cognate_table.drop_duplicates(subset='cognate_mapping_smiles')[
             ['cognate_mapping_smiles', 'cognate_mapping_name']]
         smiles_dict = {'Smiles': smiles_df['cognate_mapping_smiles'], 'Name': smiles_df['cognate_mapping_name']}
-        if bd_site_counter == 0:
+        if first_binding_site:
             generate_conformers(smiles_dict, output_folder_path, preprocess=False, convert=True)
             process_ligands(os.path.join(output_folder_path, 'conformer.mol2'), 1, output_dir=output_folder_path)
         processed_ligand_path = os.path.join(output_folder_path, 'preprocessed_ligands_1_conf')
-        target = os.path.splitext(os.path.basename(target_path_cif))[0]
-        filename, output = nrgrank_main(
-            target, 
+        ### Srceening ###
+        _, output = nrgrank_main(
+            bd_site_id,
             processed_target_path, 
             processed_ligand_path, 
             args.output_dir,
             write_info=False,
             USE_CLASH=False, 
-            write_csv = False,
+            write_csv=False,
+            unique_run_id=f'bd_site_{bd_site_id}'
         )
         output_bd = pd.DataFrame([x.split(',') for x in output])
         output_bd.columns = output_bd.iloc[0]
         output_bd = output_bd.drop(0)
-        output_bd["Binding site"] = bd_site_counter
+        output_bd["Binding site"] = bd_site_id
         output_all_bds.append(output_bd)
     output_all_bds_df = pd.concat(output_all_bds, ignore_index=True)
+
+    output_all_bds_df["Name"] = output_all_bds_df["Name"].str.strip("'")
+
+    output_all_bds_df["pose_file"] = f"{args.output_dir}/ligand_poses/" + output_all_bds_df["Name"] + "_bd_site_" + output_all_bds_df["Binding site"] + ".cif"
+
+    runtime = time.time() - start_time
+    output_all_bds_df["nrgrank_runtime"] = runtime
+
     output_all_bds_df.to_csv(f"{args.output_dir}/{args.output_prefix}_cognate_ranking.csv", index=False)
     _log.info(f"Results saved to {args.output_dir}/{args.output_prefix}_cognate_ranking.csv")
+
+    _log.info("Converting ligands to cif format")
+    for ligand_file in output_all_bds_df["pose_file"].unique():
+        ligand_file_in = ligand_file.replace('.cif', '.pdb')
+        subprocess.run(f"gemmi convert \"{ligand_file_in}\" \"{ligand_file}\"", shell=True, check=True)
+
+    _log.info(f"NRGRank run completed in {runtime/60:.2f} minutes")
 
 if __name__ == '__main__':
     main()

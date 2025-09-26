@@ -2,8 +2,9 @@ snakemake==9.1
 gemmi
 scikit-learn
 pandas
-numpy
+numpy==2.2.6
 pydantic
 requests
 openbabel-wheel
-nrgrank
+nrgrank[rdkit]
+gemmi-program
