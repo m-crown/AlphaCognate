@@ -1,8 +1,14 @@
+import logging
+
+_log = logging.getLogger(__name__)
+
 import argparse
 import pandas as pd
 import gemmi
 from gemmi import cif
 from alphacognate_transplant import determine_tcs, generate_chain_ids
+
+#TODO: Should type the various output formats for df
 
 def main():
     parser = argparse.ArgumentParser(description="Transplant ligands into AlphaFold structure with configurable parameters.")
@@ -21,6 +27,25 @@ def main():
     # Load AlphaFold structure
     af_structure = cif.read(args.structure_file)
     query_block = af_structure.sole_block()
+    structure_info = pd.DataFrame(query_block.get_mmcif_category('_alphacognate_structure.'))
+    
+    if structure_info["num_transplants"][0] == "0":
+        _log.info("No transplants found in structure. Exiting.")
+        # Create empty output files to satisfy snakemake requirements - we could also evaluate not using a file output earlier in the tool chain and creating this only here. previously ac was the terminal job for the pipeline
+        structure_summary_file = pd.read_csv(f"{args.structure_summary_file}", sep="\t")
+        structure_summary_file["nrgrank_runtime"] = 0
+        structure_summary_file.to_csv(f"{args.output_summary}", sep="\t", index=False)
+        
+        query_block.set_mmcif_category("_alphacognate_structure.", structure_summary_file.to_dict(orient="list"))
+        query_block.write_file(args.output_cif)
+
+        #load the output info file from alphacognate transplant step, and add the empty cols that would be expected from the ranking step
+        combined_transplants_df = pd.read_csv(args.transplant_df_info, sep = "\t")
+        combined_transplants_df[["CF", "nrgrank_runtime", "transplanted_chain_id", "nrgrank_tcs"]] = pd.DataFrame(columns=["CF", "nrgrank_runtime","transplanted_chain_id", "nrgrank_tcs"])
+        combined_transplants_df.to_csv(args.output_tsv, sep = "\t", index = False, compression = "gzip")
+        return
+
+
     query_struct = gemmi.make_structure_from_block(query_block)
     query_struct.merge_chain_parts()
     chem_comp = pd.DataFrame(query_block.get_mmcif_category('_chem_comp.'))
@@ -41,6 +66,7 @@ def main():
         ligand_ranking_df.loc[index, "transplanted_chain_id"] = transplant_id
         if args.top_ligands_only and not row["top_ranked"]:
             #skip the actual transplant if top ligands only is set and this is not a top ranked ligand
+            ligand_ranking_df.loc[index, "nrgrank_tcs"] = pd.NA
             continue
 
         cognate_ligand_file = row["pose_file"]
@@ -94,6 +120,7 @@ def main():
     transplants_df = pd.read_csv(args.transplant_df_info, sep = "\t")
 
     combined_transplants_df = transplants_df.merge(ligand_ranking_df, left_on = ["cluster", "cognate_mapping_name"], right_on = ["binding_site", "Name"])
+    combined_transplants_df.drop(columns = ["binding_site", "Name", "pose_file"], inplace = True)
     combined_transplants_df.to_csv(args.output_tsv, sep = "\t", index = False, compression = "gzip")
 
 if __name__ == "__main__":

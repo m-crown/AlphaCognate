@@ -50,7 +50,7 @@ foldseek version
 AlphaCognate requires a directory of predicted structure files and an accompanying manifest file. If you need to download the predicted structure files from the AlphaFold database this can be done using the following helper command and an input file containing the list of UniProt IDs (one per line, replace $UNIPROTIDS_FILE with your file and $OUTPUTDIRECTORY with the directory you want to save the structures in):
 
 ```bash
-python3 bin/get_alphafold_structures.py $UNIPROTIDS_FILE $OUTPUTDIRECTORY
+python3 bin/get_alphafold_structures.py $UNIPROTIDS_FILE --output_dir $OUTPUTDIRECTORY
 ```
 
 The accompanying comma separated manifest file should contain the following columns (without a header row):
@@ -126,7 +126,7 @@ The pipeline is configured using a YAML file, which can be specified using the `
 - `domains`: either "cath-alphafold" or "ted". This flag alters the pre-formatted predicted structure domain profiles which are used for analysis of domain-ligand interactions. See [pre-requisites](#pre-requisites).
 - `top_ranked`: True/False, when set to True only the top ranked ligand transplant per binding site per structure is retained.
 
-### Running the Webapp.
+### Running the Webapp
 
 Following completion of an analysis, data can be loaded and visualsied in the webapp. The webapp consists of a Docker compose file used to create a backend FastAPI server, frontend Nginx server (serving a React app) and a PostgreSQL database.
 
@@ -135,11 +135,11 @@ To load data into the webapp, do the following:
 1. Copy the combined_transplant.tsv.gz and combined_structures.tsv.gz files along with the transplanted cif files to the cif-files directory in the webapp directory.
 2. Load the information into the database using the following command:
 
-```bash
-docker compose up -d postgres
-python3 database.py
-docker compose down postgres
-```
+    ```bash
+    docker compose up -d postgres
+    python3 database.py
+    docker compose down postgres
+    ```
 
 3. Start the webapp using the following command:
 

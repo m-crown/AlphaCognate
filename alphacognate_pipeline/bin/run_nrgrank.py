@@ -103,7 +103,17 @@ def main():
     #load the af structure to which ligands will be transplanted
     af_structure = cif.read(target_path_cif)
     structure_block = af_structure.sole_block()
+    structure_table = pd.DataFrame(structure_block.get_mmcif_category('_alphacognate_structure.'))
+    if structure_table["num_transplants"][0] == "0":
+        _log.error(f"No transplants found in structure {target_path_cif}. Exiting.")
+        #now need to produce the required output files to satisfy snakemake.
+        #TODO: There must be a nicer way to validate col schemas etc and make empty files - pandera? pydantic?
+        with open(f"{args.output_dir}/{args.output_prefix}_cognate_ranking.csv", 'w') as f:
+            f.write("Name,CF,Binding site,pose_file,nrgrank_runtime\n")
+        _log.info(f"No transplants in structure. Empty results saved to {args.output_dir}/{args.output_prefix}_cognate_ranking.csv")
+        return
     transplant_table = pd.DataFrame(structure_block.get_mmcif_category('_alphacognate_transplants.'))
+    
     cognate_table = pd.DataFrame(structure_block.get_mmcif_category('_alphacognate_cognate_mapping.'))
     
     analysis_file_path = Path(f"{args.output_dir}/analysis")
