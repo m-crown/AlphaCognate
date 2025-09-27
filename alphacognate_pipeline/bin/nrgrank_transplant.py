@@ -1,4 +1,5 @@
 import logging
+from pathlib import Path
 
 _log = logging.getLogger(__name__)
 
@@ -39,10 +40,8 @@ def main():
         query_block.set_mmcif_category("_alphacognate_structure.", structure_summary_file.to_dict(orient="list"))
         query_block.write_file(args.output_cif)
 
-        #load the output info file from alphacognate transplant step, and add the empty cols that would be expected from the ranking step
-        combined_transplants_df = pd.read_csv(args.transplant_df_info, sep = "\t")
-        combined_transplants_df[["CF", "nrgrank_runtime", "transplanted_chain_id", "nrgrank_tcs"]] = pd.DataFrame(columns=["CF", "nrgrank_runtime","transplanted_chain_id", "nrgrank_tcs"])
-        combined_transplants_df.to_csv(args.output_tsv, sep = "\t", index = False, compression = "gzip")
+        # Create an empty file with no transplants (predominantly because snakemake is expecting it)
+        Path(f"{args.output_tsv}").touch()
         return
 
 
