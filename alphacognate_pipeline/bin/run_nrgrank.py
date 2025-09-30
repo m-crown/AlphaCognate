@@ -146,7 +146,7 @@ def main():
             process_ligands(os.path.join(output_folder_path, 'conformer.mol2'), 1, output_dir=output_folder_path)
         processed_ligand_path = os.path.join(output_folder_path, 'preprocessed_ligands_1_conf')
         ### Srceening ###
-        _, output = nrgrank_main(
+        _, output_dict = nrgrank_main(
             bd_site_id,
             processed_target_path, 
             processed_ligand_path, 
@@ -156,16 +156,22 @@ def main():
             write_csv=False,
             unique_run_id=f'bd_site_{bd_site_id}'
         )
-        output_bd = pd.DataFrame([x.split(',') for x in output])
-        output_bd.columns = output_bd.iloc[0]
-        output_bd = output_bd.drop(0)
+        
+        #TODO: with a future ver of nrgrank with tsv output, we can skip the below parsing which is made to handle commas in smiles etc
+        # Safe parse with pandas
+        print(output_dict)
+        output_bd = pd.DataFrame(output_dict)
+        print(output_bd)
+        output_bd["Binding site"] = bd_site_id
+        output_all_bds.append(output_bd)
+
         output_bd["Binding site"] = bd_site_id
         output_all_bds.append(output_bd)
     output_all_bds_df = pd.concat(output_all_bds, ignore_index=True)
 
-    output_all_bds_df["Name"] = output_all_bds_df["Name"].str.strip("'")
+    output_all_bds_df["Names"] = output_all_bds_df["Names"].str.strip("'")
 
-    output_all_bds_df["pose_file"] = f"{args.output_dir}/ligand_poses/" + output_all_bds_df["Name"] + "_bd_site_" + output_all_bds_df["Binding site"] + ".cif"
+    output_all_bds_df["pose_file"] = f"{args.output_dir}/ligand_poses/" + output_all_bds_df["Names"] + "_bd_site_" + output_all_bds_df["Binding site"] + ".cif"
 
     runtime = time.time() - start_time
     output_all_bds_df["nrgrank_runtime"] = runtime

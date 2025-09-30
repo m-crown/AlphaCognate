@@ -53,7 +53,7 @@ def main():
 
     # Load ligand ranking
     ligand_ranking_df = pd.read_csv(args.ranking_file)
-    top_ligands_df = ligand_ranking_df.loc[ligand_ranking_df.groupby('Binding site')['CF'].idxmin()]
+    top_ligands_df = ligand_ranking_df.loc[ligand_ranking_df.groupby('Binding site')['Score'].idxmin()]
     ligand_ranking_df["top_ranked"] = ligand_ranking_df.index.isin(top_ligands_df.index)
     existing_chain_ids = [chain.name for chain in query_struct[0]]
     num_transplants = len(ligand_ranking_df) + len(existing_chain_ids) - 1
@@ -103,7 +103,7 @@ def main():
     chem_comp_dict = chem_comp.to_dict(orient="list")
     query_block.set_mmcif_category("_chem_comp.", chem_comp_dict)
     ligand_ranking_df["top_ranked"] = ligand_ranking_df["top_ranked"].astype(int)
-    ligand_ranking_df["Name"] = ligand_ranking_df["Name"].str.strip("'")
+    ligand_ranking_df["Names"] = ligand_ranking_df["Names"].str.strip("'") #this may be unnecessary not - investigate
     ligand_ranking_df.rename(columns={"Binding site": "binding_site"}, inplace=True)
     query_block.set_mmcif_category("_nrgrank.", ligand_ranking_df.drop(columns=["pose_file", "nrgrank_runtime"]).to_dict(orient="list"))
 
@@ -118,8 +118,8 @@ def main():
     #load the output info file from alphacognate transplant step, and combine the information from the ligand ranking step
     transplants_df = pd.read_csv(args.transplant_df_info, sep = "\t")
 
-    combined_transplants_df = transplants_df.merge(ligand_ranking_df, left_on = ["cluster", "cognate_mapping_name"], right_on = ["binding_site", "Name"])
-    combined_transplants_df.drop(columns = ["binding_site", "Name", "pose_file"], inplace = True)
+    combined_transplants_df = transplants_df.merge(ligand_ranking_df, left_on = ["cluster", "cognate_mapping_name"], right_on = ["binding_site", "Names"])
+    combined_transplants_df.drop(columns = ["binding_site", "Names", "pose_file"], inplace = True)
     combined_transplants_df.to_csv(args.output_tsv, sep = "\t", index = False, compression = "gzip")
 
 if __name__ == "__main__":
