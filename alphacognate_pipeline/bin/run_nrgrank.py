@@ -154,14 +154,14 @@ def main():
             write_info=False,
             USE_CLASH=False, 
             write_csv=False,
+            file_separator="\t",
+            output_dictionary=True,
             unique_run_id=f'bd_site_{bd_site_id}'
         )
         
         #TODO: with a future ver of nrgrank with tsv output, we can skip the below parsing which is made to handle commas in smiles etc
         # Safe parse with pandas
-        print(output_dict)
         output_bd = pd.DataFrame(output_dict)
-        print(output_bd)
         output_bd["Binding site"] = bd_site_id
         output_all_bds.append(output_bd)
 
