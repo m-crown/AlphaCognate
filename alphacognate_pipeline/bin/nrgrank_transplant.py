@@ -106,8 +106,10 @@ def main():
     ligand_ranking_df["Names"] = ligand_ranking_df["Names"].str.strip("'") #this may be unnecessary not - investigate
     ligand_ranking_df.rename(columns={"Binding site": "binding_site"}, inplace=True)
     query_block.set_mmcif_category("_nrgrank.", ligand_ranking_df.drop(columns=["pose_file", "nrgrank_runtime"]).to_dict(orient="list"))
-
-    runtime = ligand_ranking_df["nrgrank_runtime"].values[0] #pass through runtime from the ranking step to the structure summary file
+    if len(ligand_ranking_df) > 0:
+        runtime = ligand_ranking_df["nrgrank_runtime"].values[0] #pass through runtime from the ranking step to the structure summary file
+    else:
+        runtime = None
     structure_summary_file = pd.read_csv(f"{args.structure_summary_file}", sep="\t")
     structure_summary_file["nrgrank_runtime"] = runtime
     structure_summary_file.to_csv(f"{args.output_summary}", sep="\t", index=False)
