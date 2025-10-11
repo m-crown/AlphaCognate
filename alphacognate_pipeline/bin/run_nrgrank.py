@@ -123,7 +123,7 @@ def main():
         #now need to produce the required output files to satisfy snakemake.
         #TODO: There must be a nicer way to validate col schemas etc and make empty files - pandera? pydantic?
         with open(f"{args.output_dir}/{args.output_prefix}_cognate_ranking.csv", 'w') as f:
-            f.write("Name,CF,Binding site,pose_file,nrgrank_runtime\n")
+            f.write("Name,Score,Binding site,pose_file,nrgrank_runtime\n")
         _log.info(f"No transplants in structure. Empty results saved to {args.output_dir}/{args.output_prefix}_cognate_ranking.csv")
         return
     transplant_table = pd.DataFrame(structure_block.get_mmcif_category('_alphacognate_transplants.'))
@@ -138,7 +138,7 @@ def main():
     if len(cognate_table) == 0:
         _log.error("No valid cognate ligands found in cognate mapping table. Exiting.")
         with open(f"{args.output_dir}/{args.output_prefix}_cognate_ranking.csv", 'w') as f:
-            f.write("Name,CF,Binding site,pose_file,nrgrank_runtime\n")
+            f.write("Name,Score,Binding site,pose_file,nrgrank_runtime\n")
         _log.info(f"No valid cognate ligands found. Empty results saved to {args.output_dir}/{args.output_prefix}_cognate_ranking.csv")
         return
     
