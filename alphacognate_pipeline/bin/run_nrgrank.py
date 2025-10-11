@@ -82,6 +82,20 @@ def prep_bd_site(transplant_table, output_dir, bd_site_offset):
         output_file_list.append(file_path)
     return output_file_list
 
+from rdkit import Chem
+
+def has_r_group_or_dummy(smiles: str) -> bool:
+    mol = Chem.MolFromSmiles(smiles)
+    if not mol:
+        return False  # invalid SMILES
+    
+    for atom in mol.GetAtoms():
+        symbol = atom.GetSymbol()
+        atomic_num = atom.GetAtomicNum()
+        if symbol == '*' or symbol.startswith('R') or atomic_num == 0:
+            return True
+    return False
+
 
 def main():
     args = argparse.ArgumentParser(description="Run NRGRank on a target CIF file.")
@@ -115,6 +129,18 @@ def main():
     transplant_table = pd.DataFrame(structure_block.get_mmcif_category('_alphacognate_transplants.'))
     
     cognate_table = pd.DataFrame(structure_block.get_mmcif_category('_alphacognate_cognate_mapping.'))
+
+    # Filter the cognate table to only include ligands without R groups or dummy atoms.
+    cognate_table["valid_smiles"] = cognate_table["cognate_mapping_smiles"].apply(has_r_group_or_dummy)
+    cognate_table = cognate_table[cognate_table["valid_smiles"] == False]
+    cognate_table = cognate_table.drop(columns=["valid_smiles"])
+
+    if len(cognate_table) == 0:
+        _log.error("No valid cognate ligands found in cognate mapping table. Exiting.")
+        with open(f"{args.output_dir}/{args.output_prefix}_cognate_ranking.csv", 'w') as f:
+            f.write("Name,CF,Binding site,pose_file,nrgrank_runtime\n")
+        _log.info(f"No valid cognate ligands found. Empty results saved to {args.output_dir}/{args.output_prefix}_cognate_ranking.csv")
+        return
     
     analysis_file_path = Path(f"{args.output_dir}/analysis")
     Path(analysis_file_path).mkdir(parents=True, exist_ok=True)
