@@ -149,23 +149,27 @@ def contact_search_target(target_struct, target_chain, reslist, contact_search_d
     
     return sup, contact_res_list
 
-def generate_chain_ids(n):
-    # Start with the alphabet for single-character IDs
-    single_alpha = list(string.ascii_uppercase[1:])  # Skip 'A' as it's used for the protein
-    single_numerics = [str(x) for x in range(0,10)]
-    single_chars = single_alpha + single_numerics
-    # If more IDs are needed, generate combinations of two characters
-    if n > len(single_chars):
-        # Generate combinations of two letters
-        double_chars = [''.join(pair) for pair in itertools.product(string.ascii_uppercase + "".join(single_numerics), repeat=2)]
-        # Combine single and double character IDs
-        all_ids = single_chars + double_chars
-    else:
-        all_ids = single_chars
-    if n  > len(all_ids[:n]):
-        raise ValueError("Not enough chain IDs to assign to all transplants")
-    else:
-        return all_ids[:n]
+def generate_chain_ids(n, max_length=4):
+    
+    chars = string.ascii_uppercase + "0123456789"
+    all_ids = []
+
+    # Start with the alphabet for single-character IDs - skipping A
+    single_alpha = list(string.ascii_uppercase[1:])
+    single_digits = [str(x) for x in range(10)]
+    all_ids.extend(single_alpha + single_digits)
+
+    # Extend with multi-character combinations up to max_length
+    for length in range(2, max_length + 1):
+        combos = [''.join(p) for p in itertools.product(chars, repeat=length)]
+        all_ids.extend(combos)
+        if len(all_ids) >= n:
+            break
+
+    if n > len(all_ids):
+        raise ValueError(f"Requested {n}, but only {len(all_ids)} IDs available (max_length={max_length}).")
+
+    return all_ids[:n]
 
 def create_transplant_chain(target_struct, target_chain, reslist, transplant_chain_name):
     new_chain = gemmi.Chain(transplant_chain_name)
