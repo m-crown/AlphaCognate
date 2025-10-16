@@ -1,4 +1,4 @@
-structure_manifest: "kahraman_analysis/kahraman_uniprot_ids.tsv"
+structure_manifest: "kahraman_analysis/kahraman_af_structure_manifest.csv"
 output_dir: "kahraman_alphacognate_cathaf"
 domains: "cath-alphafold"
 cognate_match: true
