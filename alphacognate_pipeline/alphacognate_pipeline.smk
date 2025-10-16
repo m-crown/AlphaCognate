@@ -54,8 +54,8 @@ else:
 #it is a requirment for running the combined pipeline that a structure manifest is provided.
 #and also a file mapping the domains to this . we will offer a preprocessing step to create this from the input manifest and a cath domain dataset.
 structures_manifest = pd.read_csv(config["structure_manifest"], sep=",", names = ["accession", "file_name",  "structure_dir"])
-accessions = structures_manifest.accession.tolist()
-structures = structures_manifest.file_name.tolist()
+structures = structures_manifest.accession.tolist()
+ 
 #we need to set the sturcutre dir from here
 #maybe check that it is a single directory.
 structure_dir = structures_manifest.structure_dir.values[0]
