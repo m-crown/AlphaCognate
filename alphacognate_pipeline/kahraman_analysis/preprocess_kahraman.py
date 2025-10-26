@@ -166,11 +166,11 @@ def main():
 
     output_dir = "kahraman_af_structures/"
     # Open a tar archive (compressed or not)
-    with tarfile.open(f"kahraman_af_structures/{tar}", "r") as tar:
+    tarfile = output_dir + "swissprot_cif_v4.tar"
+    with tarfile.open(f"kahraman_af_structures/{tarfile}", "r") as tar:
         for idx, row in kahraman_table_1.iterrows():
             filename = row["af_cif_filename"]
-            tar = row["v4_archive"]
-            if not pd.isna(tar) and not pd.isna(filename) and not os.path.exists(os.path.join(output_dir, filename)):
+            if not not pd.isna(filename) and not os.path.exists(os.path.join(output_dir, filename)):
                 print(f"Extracting {filename} from {tar}")
                 try:
                     tar.extract(filename + ".gz", path=output_dir)
