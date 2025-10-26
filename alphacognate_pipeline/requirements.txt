@@ -8,3 +8,4 @@ requests
 openbabel-wheel
 nrgrank[rdkit]
 gemmi-program
+bs4
