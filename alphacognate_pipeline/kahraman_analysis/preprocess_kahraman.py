@@ -112,40 +112,42 @@ def main():
     print(f"Need to download {len(af_v4_species_to_download)} species tar files from AF v4")
     # search for the species tar directories in the v4 alphafold ftp
     # list the species tars available and match to our species list
-    v4_url = "https://ftp.ebi.ac.uk/pub/databases/alphafold/v4/"
-    resp = requests.get(v4_url)
-    resp.raise_for_status()
-    soup = BeautifulSoup(resp.text, "html.parser")
-    # find all tar files
-    tar_files = [a["href"] for a in soup.find_all("a", href=re.compile(r"\.tar$"))]
+    v4_url = "https://ftp.ebi.ac.uk/pub/databases/alphafold/v4/swissprot_cif_v4.tar"
+    # resp = requests.get(v4_url)
+    # resp.raise_for_status()
+    # soup = BeautifulSoup(resp.text, "html.parser")
 
-    # match species ids in filenames
-    found_species = {}
-    for sid in af_v4_species_to_download:
-        print(f"Searching for species {sid}")
-        pattern = re.compile(rf"UP\d+_{sid}_.*\.tar")
-        matches = [f for f in tar_files if pattern.search(f)]
-        if len(matches) > 1:
-            raise ValueError(f"Error: multiple matches for species {sid}: {matches}")
-        match = matches[0] if matches else None
-        if match:
-            found_species[sid] = match
-            download_url = v4_url + match
-            if not os.path.exists("kahraman_af_structures/" + match):
-                print(f"Downloading {download_url}")
-                with requests.get(download_url, stream=True) as r:
-                    r.raise_for_status()
-                    with open("kahraman_af_structures/" + match, "wb") as out:
-                        for chunk in r.iter_content(chunk_size=8192):
-                            out.write(chunk)
-        else:
-            print(f"{sid}: MISSING")
+    #use if doing individual species directories
+    # # find all tar files
+    # tar_files = [a["href"] for a in soup.find_all("a", href=re.compile(r"\.tar$"))]
 
-    missing_species = set(af_v4_species_to_download) - set(found_species)
-    print("Missing species:", missing_species)
+    # # match species ids in filenames
+    # found_species = {}
+    # for sid in af_v4_species_to_download:
+    #     print(f"Searching for species {sid}")
+    #     pattern = re.compile(rf"UP\d+_{sid}_.*\.tar")
+    #     matches = [f for f in tar_files if pattern.search(f)]
+    #     if len(matches) > 1:
+    #         raise ValueError(f"Error: multiple matches for species {sid}: {matches}")
+    #     match = matches[0] if matches else None
+    #     if match:
+    #         found_species[sid] = match
+    #         download_url = v4_url + match
+    if not os.path.exists("kahraman_af_structures/swissprot_cif_v4.tar"):
+        print(f"Downloading {v4_url}...")
+        with requests.get(v4_url, stream=True) as r:
+            r.raise_for_status()
+            with open("kahraman_af_structures/swissprot_cif_v4.tar", "wb") as out:
+                for chunk in r.iter_content(chunk_size=8192):
+                    out.write(chunk)
+    #     else:
+    #         print(f"{sid}: MISSING")
+
+    # missing_species = set(af_v4_species_to_download) - set(found_species)
+    # print("Missing species:", missing_species)
 
     #create list of files to extract from the tar archive
-    kahraman_table_1["v4_archive"] = kahraman_table_1["uniprot_taxon"].map(lambda x: found_species.get(x, pd.NA))
+    kahraman_table_1["v4_archive"] = "swissprot_cif_v4.tar"
     
     # v4_files = [file for file in kahraman_table_1.af_cif_filename.dropna().tolist()]
 
@@ -164,12 +166,12 @@ def main():
 
     output_dir = "kahraman_af_structures/"
     # Open a tar archive (compressed or not)
-    for idx, row in kahraman_table_1.iterrows():
-        filename = row["af_cif_filename"]
-        tar = row["v4_archive"]
-        if not pd.isna(tar) and not pd.isna(filename) and not os.path.exists(os.path.join(output_dir, filename)):
-            print(f"Extracting {filename} from {tar}")
-            with tarfile.open(f"kahraman_af_structures/{tar}", "r") as tar:
+    with tarfile.open(f"kahraman_af_structures/{tar}", "r") as tar:
+        for idx, row in kahraman_table_1.iterrows():
+            filename = row["af_cif_filename"]
+            tar = row["v4_archive"]
+            if not pd.isna(tar) and not pd.isna(filename) and not os.path.exists(os.path.join(output_dir, filename)):
+                print(f"Extracting {filename} from {tar}")
                 try:
                     tar.extract(filename + ".gz", path=output_dir)
                     #decompress the gz file
