@@ -154,8 +154,7 @@ def main():
     #extract only the required files from the tar archive
     def gzip_decompress(path, delete=False):
         path = Path(path)
-        #we need the decompressed file with _4 prefix not _v4
-        out_path = path.with_suffix('').replace("_v4", "_4")  # removes .gz
+        out_path = path.with_suffix('')  # removes .gz
 
         with gzip.open(path, 'rb') as f_in, open(out_path, 'wb') as f_out:
             shutil.copyfileobj(f_in, f_out)
@@ -177,6 +176,10 @@ def main():
                     tar.extract(filename + ".gz", path=output_dir)
                     #decompress the gz file
                     gzip_decompress("kahraman_af_structures/" + filename + ".gz", delete=False)
+                    #rename the file to _4 not _v4
+                    os.rename(os.path.join(output_dir, filename), os.path.join(output_dir, filename.replace("_v4", "_4")))
+                    #remove the .gz file
+                    os.remove("kahraman_af_structures/" + filename + ".gz")
 
                 except KeyError:
                     print(f"File {filename} not found in the archive (kahraman_af_structures/{tarpath}).")
