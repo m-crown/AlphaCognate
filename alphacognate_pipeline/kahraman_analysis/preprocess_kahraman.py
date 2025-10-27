@@ -166,11 +166,11 @@ def main():
 
     output_dir = "kahraman_af_structures/"
     # Open a tar archive (compressed or not)
-    tarfile = output_dir + "swissprot_cif_v4.tar"
-    with tarfile.open(f"kahraman_af_structures/{tarfile}", "r") as tar:
+    tarpath = "swissprot_cif_v4.tar"
+    with tarfile.open(f"kahraman_af_structures/{tarpath}", "r") as tar:
         for idx, row in kahraman_table_1.iterrows():
             filename = row["af_cif_filename"]
-            if not not pd.isna(filename) and not os.path.exists(os.path.join(output_dir, filename)):
+            if not pd.isna(filename) and not os.path.exists(os.path.join(output_dir, filename)):
                 print(f"Extracting {filename} from {tar}")
                 try:
                     tar.extract(filename + ".gz", path=output_dir)
@@ -178,7 +178,7 @@ def main():
                     gzip_decompress("kahraman_af_structures/" + filename + ".gz", delete=False)
 
                 except KeyError:
-                    print(f"File {filename} not found in the archive (kahraman_af_structures/{tar}).")
+                    print(f"File {filename} not found in the archive (kahraman_af_structures/{tarpath}).")
 
     #now we have a directory of input structures, we need to make the structure manifest for the analysis run - accession, filename and structure directory
 
@@ -195,6 +195,7 @@ def main():
 
     structure_manifest = kahraman_table_1.loc[kahraman_table_1["include_in_analysis"] == True, ["af_cif_filename"]]
     structure_manifest["af_cif_basename"] = structure_manifest["af_cif_filename"].apply(lambda x: x.split(".cif")[0])
+    structure_manifest["af_cif_basename"] = structure_manifest["af_cif_basename"].str.replace("_v4", "_4")
     structure_manifest["structure_directory"] = "kahraman_analysis/kahraman_af_structures"
     structure_manifest[["af_cif_basename", "af_cif_filename", "structure_directory"]].to_csv("kahraman_af_structure_manifest.csv", header=None, index=False)
 
