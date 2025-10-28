@@ -202,7 +202,7 @@ def main():
     kahraman_table_1.to_csv("kahraman_dataset_table1_preprocessed.tsv", sep="\t", index=False)
 
 
-    structure_manifest = kahraman_table_1.loc[kahraman_table_1["include_in_analysis"] == True, ["af_cif_filename"]]
+    structure_manifest = kahraman_table_1.loc[kahraman_table_1["include_in_analysis"] == True, ["af_cif_basename", "af_cif_filename"]]
     structure_manifest["structure_directory"] = "kahraman_analysis/kahraman_af_structures"
     structure_manifest[["af_cif_basename", "af_cif_filename", "structure_directory"]].to_csv("kahraman_af_structure_manifest.csv", header=None, index=False)
 
