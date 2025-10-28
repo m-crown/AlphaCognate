@@ -197,9 +197,12 @@ def main():
             print(f"File {cif_path} not found!")
             kahraman_table_1.loc[id,"include_in_analysis"] = False
 
+    kahraman_table_1["af_cif_basename"] = kahraman_table_1["af_cif_filename"].apply(lambda x: x.split(".cif")[0])
+    kahraman_table_1["af_cif_basename"] = kahraman_table_1["af_cif_basename"].str.replace("_v4", "_4")
+    kahraman_table_1.to_csv("kahraman_dataset_table1_preprocessed.tsv", sep="\t", index=False)
+
+
     structure_manifest = kahraman_table_1.loc[kahraman_table_1["include_in_analysis"] == True, ["af_cif_filename"]]
-    structure_manifest["af_cif_basename"] = structure_manifest["af_cif_filename"].apply(lambda x: x.split(".cif")[0])
-    structure_manifest["af_cif_basename"] = structure_manifest["af_cif_basename"].str.replace("_v4", "_4")
     structure_manifest["structure_directory"] = "kahraman_analysis/kahraman_af_structures"
     structure_manifest[["af_cif_basename", "af_cif_filename", "structure_directory"]].to_csv("kahraman_af_structure_manifest.csv", header=None, index=False)
 
