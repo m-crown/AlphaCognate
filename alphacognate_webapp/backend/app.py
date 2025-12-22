@@ -174,6 +174,14 @@ def get_storage() -> StructureStorage:
         return S3StructureStorage(bucket="your-bucket-name")
     return LocalStructureStorage(base_path=Path("/app/cif-files/"))
 
+from typing import Iterator, Union
+from fastapi.responses import StreamingResponse
+
+def ensure_bytes_iter(it: Iterator[Union[str, bytes]]) -> Iterator[bytes]:
+    for chunk in it:
+        yield chunk.encode() if isinstance(chunk, str) else chunk
+
+
 @app.get("/structure/{structure_id}")
 def get_structure(
     structure_id: str,
@@ -181,18 +189,31 @@ def get_structure(
     storage: StructureStorage = Depends(get_storage),
 ):
     try:
-        file_obj = storage.get(structure_id)
-        print(f"Loading structure from {getattr(storage, 'base_path', 'unknown')}", flush=True)
+        obj = storage.get(structure_id)
     except FileNotFoundError:
-        raise HTTPException(status_code=404, detail=f"Structure not found {getattr(storage, 'base_path', 'unknown')}")
+        raise HTTPException(status_code=404, detail="Structure not found")
+
+    # If storage.get returns a file path
+    if isinstance(obj, str):
+        f = open(obj, "rb")  # binary mode
+    else:
+        f = obj  # assume it's already file-like in binary mode
 
     if chains:
-        return StreamingResponse(
-            filter_structure_chains(file_obj, chains),
-            media_type="chemical/x-cif"
-        )
-    print(f"Loading structure from {getattr(storage, 'base_path', 'unknown')}", flush=True)
-    return StreamingResponse(file_obj, media_type="chemical/x-cif")
+        stream = ensure_bytes_iter(filter_structure_chains(f, chains))
+    else:
+        # stream file in chunks
+        stream = iter(lambda: f.read(8192), b"")
+
+    headers = {
+        "Content-Disposition": f'inline; filename="{structure_id}.cif"',
+    }
+
+    return StreamingResponse(
+        stream,
+        media_type="chemical/x-mmcif",
+        headers=headers
+    )
 
 def filter_structure_chains(file_obj: BinaryIO, allowed_chains: list[str]) -> BinaryIO:
     #allowed_chains = ["A"]

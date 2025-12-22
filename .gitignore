@@ -20,3 +20,5 @@ alphacognate_webapp/backend/cif-files/
 alphacognate_pipeline/pymol-open-source/
 alphacognate_pipeline/kahraman_analysis/kahraman_alphacognate_cathaf/
 alphacognate_pipeline/kahraman_analysis/kahraman_af_structures
+alphacognate_pipeline/kahraman_analysis/kahraman_alphacognate_ted/
+alphacognate_pipeline/kahraman_analysis/kahraman_alphacognate_ted_topranked/

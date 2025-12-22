@@ -31,6 +31,24 @@ def get_uniprot_from_pdb_entity(pdb_id, entity_id = 1):
     raise requests.exceptions.HTTPError(f"HTTP error occurred: {response.status_code}")
     # return None
 
+# TODO: Apply this
+def get_smiles_from_hetcode(hetcode):
+    """
+    Fetches the UniProt accession and name for a given PDB ID and entity ID using the PDBe API.
+    Where multiple mappings exist, the mapping with the highest coverage is returned.
+    """
+    url = f"https://www.ebi.ac.uk/pdbe/api/v2/compound/summary/{hetcode}"
+    response = requests.get(url)
+    response.raise_for_status()
+    if response.status_code == 200:
+        data = response.json()
+        if hetcode in data:
+            smiles = [hetcode][0]["smiles"]
+            return smiles
+        raise ValueError(f"Unexpected response structure: {data}")
+    raise requests.exceptions.HTTPError(f"HTTP error occurred: {response.status_code}")
+    # return None
+
 def get_ec_taxon_from_uniprot(uniprot_id):
     if pd.isna(uniprot_id):
         return (pd.NA, pd.NA)
